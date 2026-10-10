@@ -1,5 +1,6 @@
 import Member from '../models/Member.js';
 import Family from '../models/Family.js';
+import { escapeRegex } from '../utils/text.js';
 
 export const globalSearch = async (req, res) => {
   try {
@@ -11,9 +12,9 @@ export const globalSearch = async (req, res) => {
       });
     }
 
-    const searchRegex = new RegExp(query.trim(), 'i');
+    const searchRegex = new RegExp(escapeRegex(query.trim()), 'i');
 
-    // Search in members
+   
     const members = await Member.find({
       $or: [
         { name: searchRegex },
@@ -31,7 +32,7 @@ export const globalSearch = async (req, res) => {
     .limit(20)
     .lean();
 
-    // Search in families
+   
     const families = await Family.find({
       $or: [
         { familyName: searchRegex },
@@ -74,7 +75,7 @@ export const searchMembers = async (req, res) => {
       });
     }
 
-    const searchRegex = new RegExp(query.trim(), 'i');
+    const searchRegex = new RegExp(escapeRegex(query.trim()), 'i');
     const skip = (page - 1) * limit;
 
     const searchQuery = {
@@ -126,7 +127,7 @@ export const searchFamilies = async (req, res) => {
       });
     }
 
-    const searchRegex = new RegExp(query.trim(), 'i');
+    const searchRegex = new RegExp(escapeRegex(query.trim()), 'i');
     const skip = (page - 1) * limit;
 
     const searchQuery = {

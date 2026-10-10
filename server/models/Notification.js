@@ -9,7 +9,13 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['member_added', 'member_updated', 'member_deleted', 'donation_added', 'document_uploaded', 'report_generated', 'family_added', 'family_updated', 'general'],
+    enum: [
+      'member_added', 'member_updated', 'member_deleted',
+      'donation_added', 'document_uploaded', 'report_generated',
+      'family_added', 'family_updated', 'family_closed', 'family_reopened',
+      'house_added', 'house_updated',
+      'general',
+    ],
     required: true,
   },
   title: {

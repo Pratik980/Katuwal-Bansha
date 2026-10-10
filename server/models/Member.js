@@ -1,10 +1,3 @@
-// backend/src/models/Member.js - COMPLETE UPDATED FILE
-// Key changes:
-// - generationMode added (auto/manual)
-// - houseNumber optional (comes from family)
-// - district NOT required
-// - surname preserved in DB but not required
-// - personStatus supports missing/unknown_name
 
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
@@ -166,6 +159,27 @@ const memberSchema = new mongoose.Schema({
   wifeDob: {
     type: Date,
   },
+
+  // Husband entered as text on a married woman, until his own member record is linked
+  husbandName: {
+    type: String,
+    trim: true,
+  },
+  husbandDob: {
+    type: Date,
+  },
+
+  // BS text of the dates above and below, exactly as typed on the form.
+  // The Date fields themselves hold the matching AD date.
+  dodNepali: { type: String, trim: true },
+  wifeDobNepali: { type: String, trim: true },
+  husbandDobNepali: { type: String, trim: true },
+  citizenshipIssueDateNepali: { type: String, trim: true },
+  nationalIdIssueDateNepali: { type: String, trim: true },
+  passportIssueDateNepali: { type: String, trim: true },
+  passportExpiryDateNepali: { type: String, trim: true },
+  drivingLicenseIssueDateNepali: { type: String, trim: true },
+  drivingLicenseExpiryDateNepali: { type: String, trim: true },
 
   // ============================================================
   // PERSON STATUS (Missing/Unknown)

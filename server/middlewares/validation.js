@@ -80,9 +80,25 @@ export const familyValidation = [
     .withMessage('Invalid status'),
 ];
 
+// Data Entry sends BS dates (YYYY-MM-DD, where a month can have 32 days); edits may resend an ISO date.
+const isDateInput = (value) => {
+  if (!value) return true;
+  const text = String(value).trim();
+  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (match) {
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 32) return true;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text) && !Number.isNaN(new Date(text).getTime())) return true;
+  throw new Error('Invalid date format');
+};
+
 // ⭐ FIXED: Member validation - relationship accepts any Nepali value
 export const memberValidation = [
+  // A person whose name is not known is saved as "नाम अज्ञात"
   body('name')
+    .if((value, { req }) => req.body.personStatus !== 'unknown_name')
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage('Name must be between 2 and 100 characters'),
@@ -97,7 +113,7 @@ export const memberValidation = [
     .trim(),
   // ⭐ FIXED: Accept any relationship value, no enum restriction
   body('relationship')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
     .isLength({ min: 1, max: 50 })
     .withMessage('Relationship must be between 1 and 50 characters'),
@@ -112,21 +128,19 @@ export const memberValidation = [
       throw new Error('Invalid phone number - must be 10 digits');
     }),
   body('email')
-    .optional()
+    .optional({ checkFalsy: true })
     .isEmail()
     .withMessage('Invalid email address'),
   body('dob')
     .optional()
-    .isISO8601()
-    .withMessage('Invalid date format'),
+    .custom(isDateInput),
   body('dod')
     .optional()
-    .isISO8601()
-    .withMessage('Invalid date format'),
+    .custom(isDateInput),
+  // The house comes from the selected family, so the member form does not send one
   body('houseNumber')
-    .trim()
-    .notEmpty()
-    .withMessage('House number is required'),
+    .optional()
+    .trim(),
   body('district')
     .trim()
     .notEmpty()
@@ -164,19 +178,19 @@ export const memberValidation = [
       return true;
     }),
   body('generation')
-    .optional()
+    .optional({ checkFalsy: true })
     .isInt({ min: 0 })
     .withMessage('Generation must be a positive number'),
   body('parentRelationshipType')
-    .optional()
+    .optional({ checkFalsy: true })
     .isIn(['biological', 'adoptive', 'step', 'guardian', 'other'])
     .withMessage('Invalid parent relationship type'),
   body('childBirthOrder')
-    .optional()
+    .optional({ checkFalsy: true })
     .isInt({ min: 1 })
     .withMessage('Child birth order must be a positive number'),
   body('lineageRole')
-    .optional()
+    .optional({ checkFalsy: true })
     .isIn(['lineage_head', 'lineage_member', 'spouse', 'other'])
     .withMessage('Invalid lineage role'),
   body('sons')

@@ -1,220 +1,66 @@
-// // src/pages/Notifications.jsx
-// import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-// import { getNotifications, markAsRead, markAllAsRead, deleteNotification } from '../api/notifications';
-// import Button from '../components/Button';
-// import { formatDistanceToNow } from 'date-fns';
-// import { CheckIcon, TrashIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
-// import { BellIcon } from '@heroicons/react/24/outline';
-
-// const Notifications = () => {
-//   const queryClient = useQueryClient();
-//   const { data, isLoading } = useQuery({
-//     queryKey: ['notifications'],
-//     queryFn: () => getNotifications({ limit: 50 }),
-//   });
-
-//   const markAsReadMutation = useMutation({
-//     mutationFn: markAsRead,
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-//     },
-//   });
-
-//   const markAllAsReadMutation = useMutation({
-//     mutationFn: markAllAsRead,
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-//     },
-//   });
-
-//   const deleteMutation = useMutation({
-//     mutationFn: deleteNotification,
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['notifications'] });
-//     },
-//   });
-
-//   if (isLoading) {
-//     return (
-//       <div className="flex items-center justify-center h-64">
-//         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-//       </div>
-//     );
-//   }
-
-//   const notifications = data?.data || [];
-
-//   return (
-//     <div className="space-y-6">
-//       <div className="flex justify-between items-center">
-//         <div>
-//           <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-//           <p className="text-gray-600">Stay updated with latest activities</p>
-//         </div>
-//         <div className="flex space-x-2">
-//           <Button
-//             variant="outline"
-//             size="sm"
-//             onClick={() => markAllAsReadMutation.mutate()}
-//           >
-//             <CheckCircleIcon className="h-4 w-4 mr-1" />
-//             Mark All Read
-//           </Button>
-//         </div>
-//       </div>
-
-//       <div className="bg-white rounded-lg shadow-sm border border-gray-200 divide-y divide-gray-200">
-//         {notifications.length === 0 ? (
-//           <div className="text-center py-12 text-gray-500">
-//             <BellIcon className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-//             <p>No notifications</p>
-//           </div>
-//         ) : (
-//           notifications.map((notification) => (
-//             <div
-//               key={notification._id}
-//               className={`p-4 flex items-start justify-between hover:bg-gray-50 transition-colors ${
-//                 !notification.isRead ? 'bg-blue-50' : ''
-//               }`}
-//             >
-//               <div className="flex-1">
-//                 <div className="flex items-center space-x-2">
-//                   <h4 className="text-sm font-semibold text-gray-900">
-//                     {notification.title}
-//                   </h4>
-//                   {!notification.isRead && (
-//                     <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
-//                       New
-//                     </span>
-//                   )}
-//                 </div>
-//                 <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
-//                 <p className="text-xs text-gray-500 mt-2">
-//                   {formatDistanceToNow(new Date(notification.createdAt), {
-//                     addSuffix: true,
-//                   })}
-//                 </p>
-//               </div>
-//               <div className="flex items-center space-x-2 ml-4">
-//                 {!notification.isRead && (
-//                   <button
-//                     onClick={() => markAsReadMutation.mutate(notification._id)}
-//                     className="p-1 text-blue-600 hover:text-blue-800"
-//                     title="Mark as read"
-//                   >
-//                     <CheckIcon className="h-5 w-5" />
-//                   </button>
-//                 )}
-//                 <button
-//                   onClick={() => deleteMutation.mutate(notification._id)}
-//                   className="p-1 text-red-600 hover:text-red-800"
-//                   title="Delete"
-//                 >
-//                   <TrashIcon className="h-5 w-5" />
-//                 </button>
-//               </div>
-//             </div>
-//           ))
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
-
-// export default Notifications;
-
-
-
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getNotifications, markAsRead, markAllAsRead, deleteNotification } from '../api/notifications';
+import {
+  getNotifications, markAsRead, markAllAsRead, deleteNotification, deleteAllNotifications,
+} from '../api/notifications';
 import Button from '../components/Button';
 import { formatDistanceToNow } from 'date-fns';
 import { CheckIcon, TrashIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { BellIcon, CurrencyDollarIcon, UserGroupIcon } from '@heroicons/react/24/outline';
-import { io } from 'socket.io-client';
+import { useLanguage } from '../context/LanguageContext';
 
-// Socket.IO connection
-const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+const PAGE_SIZE = 20;
 
+// The list refreshes itself: SocketContext reloads these queries whenever a
+// notification is added, read or deleted, here or by someone else.
 const Notifications = () => {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
-  const [notifications, setNotifications] = useState([]);
+  const [page, setPage] = useState(1);
 
-  // Fetch notifications
   const { data, isLoading } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => getNotifications({ limit: 50 }),
+    queryKey: ['notifications', page],
+    queryFn: () => getNotifications({ page, limit: PAGE_SIZE }),
+    placeholderData: (previous) => previous,
   });
 
-  // Update notifications when data changes
-  useEffect(() => {
-    if (data?.data) {
-      setNotifications(data.data);
-    }
-  }, [data]);
-
-  // Listen for real-time notifications
-  useEffect(() => {
-    socket.on('notification:new', (notification) => {
-      setNotifications((prev) => [notification, ...prev]);
-      // Show browser notification if permitted
-      if (Notification.permission === 'granted') {
-        new Notification(notification.title, {
-          body: notification.message,
-          icon: '/favicon.ico',
-        });
-      }
-    });
-
-    socket.on('notification:read', (notification) => {
-      setNotifications((prev) =>
-        prev.map((n) => (n._id === notification._id ? notification : n))
-      );
-    });
-
-    socket.on('notification:deleted', ({ id }) => {
-      setNotifications((prev) => prev.filter((n) => n._id !== id));
-    });
-
-    return () => {
-      socket.off('notification:new');
-      socket.off('notification:read');
-      socket.off('notification:deleted');
-    };
-  }, []);
-
-  // Request notification permission
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  const markAsReadMutation = useMutation({
-    mutationFn: markAsRead,
-    onSuccess: (updated) => {
-      setNotifications((prev) =>
-        prev.map((n) => (n._id === updated._id ? updated : n))
-      );
-    },
+  const { data: unreadData } = useQuery({
+    queryKey: ['notifications-unread', 'list'],
+    queryFn: () => getNotifications({ limit: 1, isRead: false }),
   });
 
-  const markAllAsReadMutation = useMutation({
-    mutationFn: markAllAsRead,
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications-unread'] });
+  };
+
+  const markAsReadMutation = useMutation({ mutationFn: markAsRead, onSuccess: refresh });
+  const markAllAsReadMutation = useMutation({ mutationFn: markAllAsRead, onSuccess: refresh });
+  const deleteMutation = useMutation({ mutationFn: deleteNotification, onSuccess: refresh });
+  const deleteManyMutation = useMutation({
+    mutationFn: deleteAllNotifications,
     onSuccess: () => {
-      setNotifications((prev) =>
-        prev.map((n) => ({ ...n, isRead: true, readAt: new Date() }))
-      );
+      setPage(1);
+      refresh();
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: deleteNotification,
-    onSuccess: (_, id) => {
-      setNotifications((prev) => prev.filter((n) => n._id !== id));
-    },
-  });
+  const notifications = data?.data || [];
+  const total = data?.pagination?.total || 0;
+  const pages = Math.max(1, data?.pagination?.pages || 1);
+  const unreadCount = unreadData?.pagination?.total || 0;
+
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [page, pages]);
+
+  const handleDeleteRead = () => {
+    if (window.confirm(t('delete_read_confirm'))) deleteManyMutation.mutate({ isRead: true });
+  };
+
+  const handleDeleteAll = () => {
+    if (window.confirm(t('delete_all_confirm'))) deleteManyMutation.mutate({});
+  };
 
   const getNotificationIcon = (type) => {
     switch (type) {
@@ -231,37 +77,47 @@ const Notifications = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
       </div>
     );
   }
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('notifications')}</h1>
           <p className="text-gray-600">
-            Stay updated with latest activities
+            {t('notifications_subtitle')}
             {unreadCount > 0 && (
               <span className="ml-2 px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
-                {unreadCount} unread
+                {unreadCount} {t('unread')}
               </span>
             )}
           </p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           {unreadCount > 0 && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => markAllAsReadMutation.mutate()}
-              isLoading={markAllAsReadMutation.isPending}
+              disabled={markAllAsReadMutation.isPending}
             >
               <CheckCircleIcon className="h-4 w-4 mr-1" />
-              Mark All Read
+              {t('mark_all_read')}
+            </Button>
+          )}
+          {total > unreadCount && (
+            <Button variant="outline" size="sm" onClick={handleDeleteRead} disabled={deleteManyMutation.isPending}>
+              <TrashIcon className="h-4 w-4 mr-1" />
+              {t('delete_read')}
+            </Button>
+          )}
+          {total > 0 && (
+            <Button variant="danger" size="sm" onClick={handleDeleteAll} disabled={deleteManyMutation.isPending}>
+              <TrashIcon className="h-4 w-4 mr-1" />
+              {t('delete_all')}
             </Button>
           )}
         </div>
@@ -271,8 +127,8 @@ const Notifications = () => {
         {notifications.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
             <BellIcon className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-            <p>No notifications</p>
-            <p className="text-sm mt-1">All caught up!</p>
+            <p>{t('no_notifications')}</p>
+            <p className="text-sm mt-1">{t('all_caught_up')}</p>
           </div>
         ) : (
           notifications.map((notification) => (
@@ -293,7 +149,7 @@ const Notifications = () => {
                     </h4>
                     {!notification.isRead && (
                       <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
-                        New
+                        {t('new_badge')}
                       </span>
                     )}
                   </div>
@@ -306,11 +162,6 @@ const Notifications = () => {
                         addSuffix: true,
                       })}
                     </p>
-                    {notification.data?.donationId && (
-                      <span className="text-xs text-gray-400">
-                        Donation #{notification.data?.receiptNumber || 'N/A'}
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
@@ -319,7 +170,7 @@ const Notifications = () => {
                   <button
                     onClick={() => markAsReadMutation.mutate(notification._id)}
                     className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Mark as read"
+                    title={t('mark_as_read')}
                   >
                     <CheckIcon className="h-4 w-4" />
                   </button>
@@ -327,7 +178,7 @@ const Notifications = () => {
                 <button
                   onClick={() => deleteMutation.mutate(notification._id)}
                   className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Delete"
+                  title={t('delete')}
                 >
                   <XMarkIcon className="h-4 w-4" />
                 </button>
@@ -336,6 +187,22 @@ const Notifications = () => {
           ))
         )}
       </div>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            {t('page_of')} {page} {t('of')} {pages} ({total})
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              {t('previous')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page >= pages}>
+              {t('next')}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

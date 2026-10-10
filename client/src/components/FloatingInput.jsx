@@ -1,4 +1,3 @@
-// src/components/FloatingInput.jsx
 import React, { useState, forwardRef } from 'react';
 import { FaRegUser, FaEnvelope, FaPhone, FaCalendar, FaMapPin, FaIdCard, FaBriefcase, FaGraduationCap, FaHeartbeat, FaTransgender } from 'react-icons/fa';
 import { PiGenderIntersexBold } from 'react-icons/pi';

@@ -1,5 +1,6 @@
 // src/context/SocketContext.jsx
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import io from 'socket.io-client';
 import toast from 'react-hot-toast';
 
@@ -16,6 +17,7 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const socketInstance = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
@@ -42,19 +44,32 @@ export const SocketProvider = ({ children }) => {
       toast.error('Failed to connect to real-time server');
     });
 
+    const refreshNotifications = () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread'] });
+    };
+
     // Listen for notifications
     socketInstance.on('notification:new', (notification) => {
       toast.success(notification.message || 'New notification');
+      refreshNotifications();
+    });
+    ['notification:read', 'notification:all_read', 'notification:deleted', 'notification:cleared'].forEach((event) => {
+      socketInstance.on(event, refreshNotifications);
     });
 
-    // Listen for member updates
-    socketInstance.on('member:created', (member) => {
-      toast.success(`New member added: ${member.name}`);
-    });
+    // Member lists and family trees follow every member change
+    const refreshMemberData = () => {
+      ['members', 'members-dropdown', 'members-tree', 'members-for-families', 'familyTree', 'member'].forEach((key) => {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      });
+    };
 
-    socketInstance.on('member:updated', (member) => {
-      toast.success(`Member updated: ${member.name}`);
-    });
+    // Listen for member updates (the notification above already tells the user)
+    socketInstance.on('member:created', refreshMemberData);
+    socketInstance.on('member:updated', refreshMemberData);
+
+    socketInstance.on('member:deleted', refreshMemberData);
 
     // Listen for donation updates
     socketInstance.on('donation:created', (donation) => {
@@ -66,7 +81,7 @@ export const SocketProvider = ({ children }) => {
     return () => {
       socketInstance.disconnect();
     };
-  }, []);
+  }, [queryClient]);
 
   const joinRoom = (room) => {
     if (socket && isConnected) {

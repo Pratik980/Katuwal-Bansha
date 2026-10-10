@@ -9,20 +9,19 @@ import {
   searchMembers,
   getMembersByFamily,
   getMemberStats,
+  getMemberOptions,
+  updateVerification,
 } from '../controllers/memberController.js';
 import { validate, memberValidation } from '../middlewares/validation.js';
 import { uploadSinglePhoto, handleUpload } from '../middlewares/upload.js';
-import { rateLimit } from '../middlewares/rateLimit.js';
 
 const router = express.Router();
-
-// Apply rate limiting to all member routes
-router.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 // GET routes
 router.get('/', getMembers);
 router.get('/stats', getMemberStats);
 router.get('/search', searchMembers);
+router.get('/options', getMemberOptions);
 router.get('/family/:familyId', getMembersByFamily);
 router.get('/:id', getMemberById);
 
@@ -41,6 +40,9 @@ router.put(
   validate(memberValidation),
   updateMember
 );
+
+// Verification is its own small request, separate from the member form
+router.put('/:id/verification', updateVerification);
 
 // DELETE routes
 router.delete('/:id', deleteMember);

@@ -1,4 +1,4 @@
-// server/controllers/draftController.js
+
 import Draft from '../models/Draft.js';
 
 export const getDrafts = async (req, res) => {

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getFamilies } from '../api/families';
-import { getMembers } from '../api/members';
-import { 
-  generateFamilyReport, 
+import { getFamilies, getFamilyById } from '../api/families';
+import { getMembersByFamily } from '../api/members';
+import {
+  generateFamilyReport,
   generateAllFamiliesReport,
   generateMemberReport,
   generateGenerationReport,
@@ -17,8 +17,8 @@ import Button from '../components/Button';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FaUsers, FaHome, FaFileExcel, FaTimes, FaChartBar, 
+import {
+  FaUsers, FaHome, FaFileExcel, FaTimes, FaChartBar,
   FaUser, FaUserFriends, FaHeart, FaDownload, FaTree,
   FaMapMarker, FaMoneyBillWave, FaFilter, FaChevronDown,
   FaChevronUp, FaPrint, FaSearch
@@ -45,40 +45,31 @@ const Reports = () => {
   const [selectedReportCard, setSelectedReportCard] = useState(null);
   const [isReportCardModalOpen, setIsReportCardModalOpen] = useState(false);
 
-  // Fetch families
+
   const { data: familiesData, isLoading: familiesLoading } = useQuery({
     queryKey: ['families-report'],
     queryFn: () => getFamilies({ limit: 1000 }),
   });
 
-  // Fetch family details when selected
+
   const { data: familyDetails, isLoading: familyLoading } = useQuery({
     queryKey: ['family', selectedFamily?._id],
     queryFn: () => getFamilyById(selectedFamily?._id),
     enabled: !!selectedFamily,
   });
 
-  // Fetch all members for statistics
-  const { data: membersData } = useQuery({
-    queryKey: ['members-stats'],
-    queryFn: () => getMembers({ limit: 10000 }),
-  });
 
-  const filteredFamilies = familiesData?.data?.filter(family => 
+
+  const filteredFamilies = familiesData?.data?.filter(family =>
     family.familyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     family.familyNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     family.clan?.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
-  const getFamilyMemberCount = (familyId) => {
-    if (!membersData?.data) return 0;
-    return membersData.data.filter(m => m.family?._id === familyId || m.family === familyId).length;
-  };
+  const getFamilyMemberCount = (familyId) =>
+    familiesData?.data?.find(family => family._id === familyId)?.memberCount ?? 0;
 
-  const getFamilyMembers = (familyId) => {
-    if (!membersData?.data) return [];
-    return membersData.data.filter(m => m.family?._id === familyId || m.family === familyId);
-  };
+
 
   const handleFamilyClick = (family) => {
     setSelectedFamily(family);
@@ -88,11 +79,11 @@ const Reports = () => {
   const handleExportFamilyReport = async (familyId, familyName) => {
     setExporting(true);
     try {
-      const blob = await generateFamilyReport({ 
+      const blob = await generateFamilyReport({
         familyId: familyId,
         format: 'excel'
       });
-      
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -101,7 +92,7 @@ const Reports = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Family report exported successfully');
     } catch (error) {
       toast.error('Failed to export family report');
@@ -113,10 +104,10 @@ const Reports = () => {
   const handleExportAllFamilies = async () => {
     setExporting(true);
     try {
-      const blob = await generateAllFamiliesReport({ 
+      const blob = await generateAllFamiliesReport({
         format: 'excel'
       });
-      
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -125,7 +116,7 @@ const Reports = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('All families report exported successfully');
     } catch (error) {
       toast.error('Failed to export all families report');
@@ -140,7 +131,7 @@ const Reports = () => {
       let blob;
       let filename;
       const queryParams = { format: 'excel', ...filters };
-      
+
       switch(type) {
         case 'all':
           blob = await exportAllMembers({ ...queryParams });
@@ -190,7 +181,7 @@ const Reports = () => {
           blob = await generateMemberReport({ ...queryParams });
           filename = `members-report-${Date.now()}.xlsx`;
       }
-      
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -199,7 +190,7 @@ const Reports = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       toast.success('Report exported successfully');
     } catch (error) {
       toast.error('Failed to export report');
@@ -235,10 +226,9 @@ const Reports = () => {
           </div>
         ) : (
           filteredFamilies.map((family) => (
-            <FamilyCard 
-              key={family._id} 
-              family={family} 
-              members={getFamilyMembers(family._id)}
+            <FamilyCard
+              key={family._id}
+              family={family}
               memberCount={getFamilyMemberCount(family._id)}
               onClick={handleFamilyClick}
               onExport={() => handleExportFamilyReport(family._id, family.familyName)}
@@ -252,49 +242,49 @@ const Reports = () => {
 
   const renderReportCards = () => {
     const reportCards = [
-      { 
-        id: 'members', 
-        title: 'Members Report', 
+      {
+        id: 'members',
+        title: 'Members Report',
         description: 'Complete list of members',
         icon: FaUsers,
         color: 'blue',
         onClick: () => handleReportCardClick('members')
       },
-      { 
-        id: 'family', 
-        title: 'Family Report', 
+      {
+        id: 'family',
+        title: 'Family Report',
         description: 'Download one family or all families',
         icon: FaHome,
         color: 'green',
         onClick: () => handleReportCardClick('family')
       },
-      { 
-        id: 'genealogy', 
-        title: 'Genealogy Report', 
+      {
+        id: 'genealogy',
+        title: 'Genealogy Report',
         description: 'Family tree summary',
         icon: FaTree,
         color: 'purple',
         onClick: () => handleReportCardClick('genealogy')
       },
-      { 
-        id: 'donation', 
-        title: 'Donation Report', 
+      {
+        id: 'donation',
+        title: 'Donation Report',
         description: 'Donations and totals',
         icon: FaMoneyBillWave,
         color: 'orange',
         onClick: () => handleReportCardClick('donation')
       },
-      { 
-        id: 'generation', 
-        title: 'Generation Report', 
+      {
+        id: 'generation',
+        title: 'Generation Report',
         description: 'Members grouped by generation',
         icon: FaChartBar,
         color: 'indigo',
         onClick: () => handleReportCardClick('generation')
       },
-      { 
-        id: 'demographic', 
-        title: 'Demographic Report', 
+      {
+        id: 'demographic',
+        title: 'Demographic Report',
         description: 'Province, district and gender statistics',
         icon: FaMapMarker,
         color: 'pink',
@@ -326,13 +316,13 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Report Type Toggle */}
+
       <div className="flex gap-2 bg-gray-100 rounded-xl p-1 w-fit">
         <button
           onClick={() => setReportType('family')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            reportType === 'family' 
-              ? 'bg-white text-gray-800 shadow-sm' 
+            reportType === 'family'
+              ? 'bg-white text-gray-800 shadow-sm'
               : 'text-gray-600 hover:text-gray-800'
           }`}
         >
@@ -342,8 +332,8 @@ const Reports = () => {
         <button
           onClick={() => setReportType('member')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            reportType === 'member' 
-              ? 'bg-white text-gray-800 shadow-sm' 
+            reportType === 'member'
+              ? 'bg-white text-gray-800 shadow-sm'
               : 'text-gray-600 hover:text-gray-800'
           }`}
         >
@@ -352,7 +342,7 @@ const Reports = () => {
         </button>
       </div>
 
-      {/* Filters */}
+
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="flex items-center gap-2 mb-3">
           <FaFilter className="text-gray-400" />
@@ -436,7 +426,7 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Content based on report type */}
+
       {reportType === 'family' ? (
         <>
           <div className="space-y-4">
@@ -470,65 +460,65 @@ const Reports = () => {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Member Reports</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              <MemberReportButton 
-                label="All Members" 
-                icon={FaUsers} 
+              <MemberReportButton
+                label="All Members"
+                icon={FaUsers}
                 onClick={() => handleExportMemberReport('all')}
                 color="blue"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Verified Members" 
-                icon={FaUser} 
+              <MemberReportButton
+                label="Verified Members"
+                icon={FaUser}
                 onClick={() => handleExportMemberReport('verified')}
                 color="green"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Pending Verification" 
-                icon={FaUser} 
+              <MemberReportButton
+                label="Pending Verification"
+                icon={FaUser}
                 onClick={() => handleExportMemberReport('pending')}
                 color="yellow"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Male Members" 
-                icon={FaUser} 
+              <MemberReportButton
+                label="Male Members"
+                icon={FaUser}
                 onClick={() => handleExportMemberReport('male')}
                 color="blue"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Female Members" 
-                icon={FaUserFriends} 
+              <MemberReportButton
+                label="Female Members"
+                icon={FaUserFriends}
                 onClick={() => handleExportMemberReport('female')}
                 color="pink"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Living Members" 
-                icon={FaHeart} 
+              <MemberReportButton
+                label="Living Members"
+                icon={FaHeart}
                 onClick={() => handleExportMemberReport('living')}
                 color="green"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Deceased Members" 
-                icon={FaHeart} 
+              <MemberReportButton
+                label="Deceased Members"
+                icon={FaHeart}
                 onClick={() => handleExportMemberReport('deceased')}
                 color="gray"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Members by Generation" 
-                icon={FaChartBar} 
+              <MemberReportButton
+                label="Members by Generation"
+                icon={FaChartBar}
                 onClick={() => handleExportMemberReport('generation')}
                 color="purple"
                 loading={exporting}
               />
-              <MemberReportButton 
-                label="Demographic Report" 
-                icon={FaMapMarker} 
+              <MemberReportButton
+                label="Demographic Report"
+                icon={FaMapMarker}
                 onClick={() => handleExportMemberReport('demographic')}
                 color="indigo"
                 loading={exporting}
@@ -538,10 +528,10 @@ const Reports = () => {
         </>
       )}
 
-      {/* Report Cards */}
+
       {renderReportCards()}
 
-      {/* Family Report Modal */}
+
       <FamilyReportModal
         isOpen={isFamilyModalOpen}
         onClose={() => {
@@ -554,7 +544,7 @@ const Reports = () => {
         exporting={exporting}
       />
 
-      {/* Report Card Modal */}
+
       <ReportCardModal
         isOpen={isReportCardModalOpen}
         onClose={() => {
@@ -571,9 +561,16 @@ const Reports = () => {
   );
 };
 
-// Family Card Component
-const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, exporting }) => {
+
+const FamilyCard = ({ family, memberCount, onClick, onExport, exporting }) => {
   const [expanded, setExpanded] = useState(false);
+
+  const { data: membersData } = useQuery({
+    queryKey: ['family-members', family._id],
+    queryFn: () => getMembersByFamily(family._id),
+    enabled: expanded,
+  });
+  const members = membersData?.data || [];
 
   const getRelationshipLabel = (relationship) => {
     const labels = {
@@ -595,13 +592,13 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
       className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-lg transition-all duration-300"
     >
       <div className="flex items-start gap-4">
-        <div 
+        <div
           className="w-14 h-14 rounded-xl bg-gradient-to-r from-green-100 to-emerald-100 flex items-center justify-center flex-shrink-0 cursor-pointer"
           onClick={() => onClick(family)}
         >
           {family.familyPhoto ? (
-            <img 
-              src={family.familyPhoto} 
+            <img
+              src={family.familyPhoto}
               alt={family.familyName}
               className="w-full h-full object-cover rounded-xl"
             />
@@ -610,7 +607,7 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 
+          <h3
             className="font-semibold text-gray-800 truncate cursor-pointer hover:text-green-600"
             onClick={() => onClick(family)}
           >
@@ -640,7 +637,7 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
         </button>
       </div>
 
-      {members && members.length > 0 && (
+      {memberCount > 0 && (
         <button
           onClick={() => setExpanded(!expanded)}
           className="flex items-center gap-2 mt-2 text-sm text-green-600 hover:text-green-700 transition-colors"
@@ -664,11 +661,11 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
                 <div key={member._id} className="flex items-center gap-2 text-sm py-1 px-2 hover:bg-gray-50 rounded-lg">
                   <div className="w-5 h-5 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
                     {member.photo ? (
-                      <img 
-                        src={member.photo} 
+                      <img
+                        src={member.photo}
                         alt={member.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => { e.target.src = '/default-avatar.png'; }}
+                        onError={(e) => { e.target.style.visibility = 'hidden'; }}
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
@@ -678,7 +675,7 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
                   </div>
                   <span className="font-medium text-gray-700 flex-1">{member.name}</span>
                   <span className="text-xs text-gray-400">
-                    {member.lineageRole === 'lineage_head' ? 'घरमुली' : 
+                    {member.lineageRole === 'lineage_head' ? 'घरमुली' :
                      getRelationshipLabel(member.relationship)}
                   </span>
                 </div>
@@ -691,7 +688,7 @@ const FamilyCard = ({ family, members = [], memberCount, onClick, onExport, expo
   );
 };
 
-// Report Card Component
+
 const ReportCard = ({ id, title, description, icon: Icon, color, onClick }) => {
   const colorClasses = {
     blue: 'from-blue-500 to-blue-600',
@@ -721,7 +718,7 @@ const ReportCard = ({ id, title, description, icon: Icon, color, onClick }) => {
   );
 };
 
-// Member Report Button Component
+
 const MemberReportButton = ({ label, icon: Icon, onClick, color, loading }) => {
   const colorClasses = {
     blue: 'hover:bg-blue-50 border-blue-200 text-blue-600',
@@ -747,7 +744,7 @@ const MemberReportButton = ({ label, icon: Icon, onClick, color, loading }) => {
   );
 };
 
-// Family Report Modal
+
 const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, exporting }) => {
   if (!isOpen || !family || !familyDetails) return null;
 
@@ -768,13 +765,13 @@ const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, e
       size="xl"
     >
       <div className="space-y-6 max-h-[80vh] overflow-y-auto px-1">
-        {/* Family Information */}
+
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-white shadow">
               {family.familyPhoto ? (
-                <img 
-                  src={family.familyPhoto} 
+                <img
+                  src={family.familyPhoto}
                   alt={family.familyName}
                   className="w-full h-full object-cover"
                 />
@@ -798,7 +795,7 @@ const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, e
           </div>
         </div>
 
-        {/* Statistics */}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
             <FaUsers className="text-blue-500 text-xl mx-auto mb-1" />
@@ -822,7 +819,6 @@ const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, e
           </div>
         </div>
 
-        {/* Member List */}
         <div>
           <h4 className="font-semibold text-gray-700 mb-3">Member List</h4>
           <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -857,7 +853,7 @@ const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, e
           </div>
         </div>
 
-        {/* Buttons */}
+
         <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
           <Button
             variant="primary"
@@ -890,7 +886,6 @@ const FamilyReportModal = ({ isOpen, onClose, family, familyDetails, onExport, e
   );
 };
 
-// Report Card Modal
 const ReportCardModal = ({ isOpen, onClose, reportType, filters, families, onExport, exporting }) => {
   if (!isOpen) return null;
 
@@ -932,7 +927,7 @@ const ReportCardModal = ({ isOpen, onClose, reportType, filters, families, onExp
     >
       <div className="space-y-6">
         {reportType === 'family' && renderFamilySelect()}
-        
+
         {reportType === 'members' && (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">Export all members with applied filters</p>

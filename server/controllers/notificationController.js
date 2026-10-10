@@ -99,6 +99,20 @@ export const deleteNotification = async (req, res) => {
   }
 };
 
+// Clears the list: everything, or with ?isRead=true only what has been read
+export const deleteAllNotifications = async (req, res) => {
+  try {
+    const query = req.query.isRead === 'true' ? { isRead: true } : {};
+    const result = await Notification.deleteMany(query);
+
+    io.emit('notification:cleared', { isRead: req.query.isRead === 'true' });
+
+    res.json({ message: 'Notifications deleted successfully', deleted: result.deletedCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export const getUnreadCount = async (req, res) => {
   try {
     const count = await Notification.countDocuments({ isRead: false });

@@ -1,8 +1,3 @@
-// backend/src/models/Family.js - COMPLETE UPDATED VERSION
-// Key changes:
-// - totalGenerations calculated from actual tree
-// - vanshaGenerationNumber manual entry preserved
-// - familyHead supports both ObjectId and string (manual entry)
 
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
@@ -132,33 +127,39 @@ familySchema.set('toJSON', { virtuals: true });
 familySchema.set('toObject', { virtuals: true });
 
 // ============================================================
+// STATICS: next free numbers
+// The values are text ("9", "10", "S10"), so the largest is found by number.
+// Sorting them as text would put "9" after "10" and hand out "10" again.
+// ============================================================
+const largestNumber = (values, pattern) =>
+  values.reduce((largest, value) => {
+    const match = String(value ?? '').match(pattern);
+    const number = match ? parseInt(match[1], 10) : NaN;
+    return Number.isNaN(number) ? largest : Math.max(largest, number);
+  }, 0);
+
+familySchema.statics.nextFamilyNumber = async function (houseId) {
+  const used = await this.find({ house: houseId }).distinct('familyNumber');
+  return String(largestNumber(used, /^(\d+)$/) + 1);
+};
+
+familySchema.statics.nextHouseIdentifier = async function () {
+  const used = await this.find().distinct('houseIdentifier');
+  return `S${largestNumber(used, /^S(\d+)$/) + 1}`;
+};
+
+// ============================================================
 // PRE-SAVE: Auto-generate familyNumber and houseIdentifier
 // ============================================================
 familySchema.pre('save', async function() {
   if (this.isNew && !this.familyNumber) {
-    const lastFamily = await this.constructor
-      .findOne({ house: this.house })
-      .sort({ familyNumber: -1 })
-      .lean();
-
-    const lastNumber = lastFamily ? parseInt(lastFamily.familyNumber, 10) : 0;
-    this.familyNumber = String(lastNumber + 1);
+    this.familyNumber = await this.constructor.nextFamilyNumber(this.house);
     console.log(`📝 Auto-generated familyNumber: ${this.familyNumber} for house: ${this.house}`);
   }
 
   // Auto-generate houseIdentifier (S1, S2, S3, ...)
   if (this.isNew && !this.houseIdentifier) {
-    const lastFamily = await this.constructor
-      .findOne()
-      .sort({ houseIdentifier: -1 })
-      .lean();
-
-    let lastNumber = 0;
-    if (lastFamily && lastFamily.houseIdentifier) {
-      const match = lastFamily.houseIdentifier.match(/^S(\d+)$/);
-      if (match) lastNumber = parseInt(match[1], 10);
-    }
-    this.houseIdentifier = `S${lastNumber + 1}`;
+    this.houseIdentifier = await this.constructor.nextHouseIdentifier();
     console.log(`📝 Auto-generated houseIdentifier: ${this.houseIdentifier}`);
   }
 });

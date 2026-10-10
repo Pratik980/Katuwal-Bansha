@@ -58,6 +58,13 @@ export const rateLimit = (options = {}) => {
     filteredTimes.push(now);
     requests.set(ip, filteredTimes);
 
+    // Now and then, drop addresses that have been quiet for a whole window
+    if (requests.size > 5000) {
+      for (const [address, times] of requests) {
+        if (times[times.length - 1] <= windowStart) requests.delete(address);
+      }
+    }
+
     if (filteredTimes.length > max) {
       return res.status(429).json({ message });
     }

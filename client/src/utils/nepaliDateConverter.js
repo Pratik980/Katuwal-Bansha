@@ -1,6 +1,6 @@
-// src/utils/nepaliDateConverter.js - NEW
-// English (Gregorian) ↔ Nepali (Bikram Sambat) date conversion
-// Uses the standard Nepali calendar data
+// src/utils/nepaliDateConverter.js
+// English (Gregorian) ↔ Nepali (Bikram Sambat) date conversion.
+// The table is the same one the server uses (server/utils/nepaliCalendar.js).
 
 // Nepali month names
 export const NEPALI_MONTHS = [
@@ -13,9 +13,38 @@ export const NEPALI_MONTHS_EN = [
   'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra'
 ];
 
-// Days in each Nepali month for years 2000-2090 BS
-// Format: [year, [days in each month]]
-const NEPALI_CALENDAR_DATA = {
+// Days in each month of the BS years 1970 - 2090.
+const CALENDAR = {
+  1970: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1971: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  1972: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  1973: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1974: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
+  1975: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  1976: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  1977: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1978: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
+  1979: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  1980: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  1981: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1982: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
+  1983: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  1984: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  1985: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1986: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
+  1987: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  1988: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  1989: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1990: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
+  1991: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  1992: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  1993: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1994: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  1995: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  1996: [31, 31, 32, 32, 31, 30, 29, 30, 30, 29, 30, 30],
+  1997: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  1998: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  1999: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
   2000: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2001: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
   2002: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
@@ -38,14 +67,14 @@ const NEPALI_CALENDAR_DATA = {
   2019: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2020: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2021: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2022: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2022: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
   2023: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2024: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2025: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
   2026: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
   2027: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2028: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2029: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  2029: [31, 31, 32, 31, 32, 30, 30, 29, 30, 29, 30, 30],
   2030: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
   2031: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2032: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
@@ -61,44 +90,44 @@ const NEPALI_CALENDAR_DATA = {
   2042: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
   2043: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
   2044: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2045: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  2045: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
   2046: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
   2047: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2048: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2049: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-  2050: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2049: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  2050: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2051: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2052: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2053: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-  2054: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2055: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-  2056: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2057: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-  2058: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2059: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-  2060: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2053: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  2054: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2055: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2056: [31, 31, 32, 31, 32, 30, 30, 29, 30, 29, 30, 30],
+  2057: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2058: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2059: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
+  2060: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
   2061: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2062: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2062: [30, 32, 31, 32, 31, 31, 29, 30, 29, 30, 29, 31],
   2063: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
   2064: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
   2065: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2066: [30, 32, 31, 32, 31, 31, 29, 30, 29, 30, 29, 31],
+  2066: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
   2067: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
   2068: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
   2069: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2070: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
+  2070: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
   2071: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2072: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
+  2072: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
   2073: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2074: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
+  2074: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2075: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2076: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-  2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-  2078: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
+  2076: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2078: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
   2079: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2080: [31, 31, 32, 32, 31, 30, 30, 30, 29, 29, 30, 30],
-  2081: [31, 31, 32, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-  2082: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
+  2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+  2081: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+  2082: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
   2083: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30],
   2084: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30],
   2085: [31, 32, 31, 32, 30, 31, 30, 30, 29, 30, 30, 30],
@@ -109,169 +138,148 @@ const NEPALI_CALENDAR_DATA = {
   2090: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
 };
 
-// Reference date: 2000/01/01 BS = 1943/04/14 AD
-const BS_START_YEAR = 2000;
-const AD_START_DATE = new Date(1943, 3, 14); // April 14, 1943
+const FIRST_YEAR = 1970;
+const LAST_YEAR = 2090;
+const EARLIEST_YEAR = 1700;
+const DAY = 86400000;
+const FIRST_DAY = Date.UTC(1913, 3, 13) / DAY; // 1 Baisakh 1970 BS = 13 April 1913
 
-// Get days in a Nepali month
-export const getDaysInNepaliMonth = (year, month) => {
-  const yearData = NEPALI_CALENDAR_DATA[year];
-  if (!yearData) return 30;
-  return yearData[month - 1] || 30;
+// No table exists for years before 1970. Those use a typical year, which puts a
+// date within a day or two of the true one: good enough to record an ancestor.
+const TYPICAL_YEAR = [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30];
+const MEAN_YEAR = 365.2562;
+
+const yearStart = (() => {
+  const starts = {};
+  let day = FIRST_DAY;
+  for (let year = FIRST_YEAR; year <= LAST_YEAR; year += 1) {
+    starts[year] = day;
+    day += CALENDAR[year].reduce((a, b) => a + b, 0);
+  }
+  starts[LAST_YEAR + 1] = day;
+  return (year) => (year >= FIRST_YEAR ? starts[year] : FIRST_DAY - Math.round((FIRST_YEAR - year) * MEAN_YEAR));
+})();
+
+const monthLengths = (year) => {
+  if (CALENDAR[year]) return CALENDAR[year];
+  const months = [...TYPICAL_YEAR];
+  months[11] += yearStart(year + 1) - yearStart(year) - 365;
+  return months;
 };
 
-// Convert AD date to BS date
+const pad = (number) => String(number).padStart(2, '0');
+
+export const isBsYear = (year) => Number.isInteger(year) && year >= EARLIEST_YEAR && year <= LAST_YEAR;
+
+// Dates before this BS year are approximate
+export const isApproximateBsYear = (year) => year < FIRST_YEAR;
+
+export const getDaysInNepaliMonth = (year, month) => {
+  if (!isBsYear(year) || month < 1 || month > 12) return 30;
+  return monthLengths(year)[month - 1];
+};
+
+export const bsToAd = (bsYear, bsMonth, bsDay) => {
+  const [year, month, day] = [Number(bsYear), Number(bsMonth), Number(bsDay)];
+  if (!isBsYear(year) || !(month >= 1 && month <= 12) || !(day >= 1 && day <= 32)) return null;
+
+  let dayNumber = yearStart(year) + day - 1;
+  for (let m = 0; m < month - 1; m += 1) dayNumber += monthLengths(year)[m];
+
+  // Midnight in the local time zone, like every other date in the app
+  const utc = new Date(dayNumber * DAY);
+  return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate());
+};
+
 export const adToBs = (adDate) => {
   if (!adDate) return null;
-  
   const date = adDate instanceof Date ? adDate : new Date(adDate);
-  if (isNaN(date.getTime())) return null;
+  if (Number.isNaN(date.getTime())) return null;
 
-  let totalDays = Math.floor((date - AD_START_DATE) / (1000 * 60 * 60 * 24));
-  if (totalDays < 0) return null;
+  const dayNumber = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY;
+  if (dayNumber < yearStart(EARLIEST_YEAR) || dayNumber >= yearStart(LAST_YEAR + 1)) return null;
 
-  let bsYear = BS_START_YEAR;
-  let bsMonth = 1;
-  let bsDay = 1;
+  let year = dayNumber >= FIRST_DAY
+    ? FIRST_YEAR + Math.floor((dayNumber - FIRST_DAY) / 366)
+    : FIRST_YEAR - Math.ceil((FIRST_DAY - dayNumber) / MEAN_YEAR) - 1;
+  while (yearStart(year + 1) <= dayNumber) year += 1;
+  while (yearStart(year) > dayNumber) year -= 1;
 
-  while (totalDays > 0) {
-    const daysInMonth = getDaysInNepaliMonth(bsYear, bsMonth);
-    if (totalDays >= daysInMonth) {
-      totalDays -= daysInMonth;
-      bsMonth++;
-      if (bsMonth > 12) {
-        bsMonth = 1;
-        bsYear++;
-      }
-    } else {
-      bsDay += totalDays;
-      totalDays = 0;
-    }
+  const months = monthLengths(year);
+  let rest = dayNumber - yearStart(year);
+  let month = 0;
+  while (rest >= months[month]) {
+    rest -= months[month];
+    month += 1;
   }
 
   return {
-    year: bsYear,
-    month: bsMonth,
-    day: bsDay,
-    formatted: `${bsYear}-${String(bsMonth).padStart(2, '0')}-${String(bsDay).padStart(2, '0')}`,
-    formattedNepali: `${NEPALI_MONTHS[bsMonth - 1]} ${bsDay}, ${bsYear}`,
+    year,
+    month: month + 1,
+    day: rest + 1,
+    formatted: `${year}-${pad(month + 1)}-${pad(rest + 1)}`,
+    formattedNepali: `${NEPALI_MONTHS[month]} ${rest + 1}, ${year}`,
+    approximate: isApproximateBsYear(year),
   };
 };
 
-// Convert BS date to AD date
-export const bsToAd = (bsYear, bsMonth, bsDay) => {
-  if (!bsYear || !bsMonth || !bsDay) return null;
+export const BS_YEAR_RANGE = { min: EARLIEST_YEAR, max: LAST_YEAR };
 
-  let totalDays = 0;
-  for (let y = BS_START_YEAR; y < bsYear; y++) {
-    const yearData = NEPALI_CALENDAR_DATA[y];
-    if (yearData) {
-      totalDays += yearData.reduce((a, b) => a + b, 0);
-    }
-  }
-
-  for (let m = 1; m < bsMonth; m++) {
-    totalDays += getDaysInNepaliMonth(bsYear, m);
-  }
-
-  totalDays += bsDay - 1;
-
-  const adDate = new Date(AD_START_DATE);
-  adDate.setDate(adDate.getDate() + totalDays);
-
-  return adDate;
-};
-
-// Parse a date string (supports both AD and BS formats)
-export const parseDateString = (dateStr) => {
+// Reads YYYY-MM-DD typed by the user. The fields are BS; pass 'AD' to read the
+// same text as an English date instead.
+export const parseDateString = (dateStr, calendar = 'BS') => {
   if (!dateStr || typeof dateStr !== 'string') return null;
-  
-  const trimmed = dateStr.trim();
-  if (!trimmed) return null;
-
-  // Try YYYY-MM-DD or YYYY/MM/DD
-  const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  const match = dateStr.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
   if (!match) return null;
 
-  const [, yearStr, monthStr, dayStr] = match;
-  const year = parseInt(yearStr, 10);
-  const month = parseInt(monthStr, 10);
-  const day = parseInt(dayStr, 10);
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  if (month < 1 || month > 12 || day < 1) return null;
 
-  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > 31) return null;
-
-  // If year >= 2000 and <= 2090, treat as BS
-  if (year >= 2000 && year <= 2090) {
-    return { type: 'BS', year, month, day };
+  if (calendar === 'AD') {
+    const date = new Date(year, month - 1, day);
+    const isRealDate = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    return isRealDate && adToBs(date) ? { type: 'AD', year, month, day } : null;
   }
 
-  // If year >= 1943 and <= 2040, treat as AD
-  if (year >= 1943 && year <= 2040) {
-    return { type: 'AD', year, month, day };
-  }
-
-  return null;
+  if (!isBsYear(year) || day > getDaysInNepaliMonth(year, month)) return null;
+  return { type: 'BS', year, month, day };
 };
 
-// Convert any date input to AD Date object
 export const toAdDate = (input) => {
   if (!input) return null;
+  if (input instanceof Date) return isNaN(input.getTime()) ? null : input;
 
-  // If already a Date
-  if (input instanceof Date) {
-    return isNaN(input.getTime()) ? null : input;
-  }
-
-  // If object with year/month/day
   if (typeof input === 'object' && input.year && input.month && input.day) {
-    if (input.type === 'BS') {
-      return bsToAd(input.year, input.month, input.day);
-    }
+    if (input.type === 'BS') return bsToAd(input.year, input.month, input.day);
     return new Date(input.year, input.month - 1, input.day);
   }
 
-  // If string
   if (typeof input === 'string') {
     const parsed = parseDateString(input);
     if (!parsed) return null;
-    
-    if (parsed.type === 'BS') {
-      return bsToAd(parsed.year, parsed.month, parsed.day);
-    }
-    return new Date(parsed.year, parsed.month - 1, parsed.day);
+    return bsToAd(parsed.year, parsed.month, parsed.day);
   }
-
   return null;
 };
 
-// Format AD date as BS string
 export const formatAdAsBs = (adDate) => {
   const bs = adToBs(adDate);
   return bs ? bs.formatted : '';
 };
 
-// Format AD date as Nepali BS string
 export const formatAdAsBsNepali = (adDate) => {
   const bs = adToBs(adDate);
   return bs ? bs.formattedNepali : '';
 };
 
-// Validate if a date string is a valid date
 export const isValidDateString = (dateStr) => {
   return parseDateString(dateStr) !== null;
 };
 
 export default {
-  NEPALI_MONTHS,
-  NEPALI_MONTHS_EN,
-  getDaysInNepaliMonth,
-  adToBs,
-  bsToAd,
-  parseDateString,
-  toAdDate,
-  formatAdAsBs,
-  formatAdAsBsNepali,
-  isValidDateString,
+  NEPALI_MONTHS, NEPALI_MONTHS_EN, getDaysInNepaliMonth,
+  adToBs, bsToAd, parseDateString, toAdDate,
+  formatAdAsBs, formatAdAsBsNepali, isValidDateString,
 };

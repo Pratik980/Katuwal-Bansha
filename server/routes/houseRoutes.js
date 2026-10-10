@@ -9,12 +9,8 @@ import {
   getNextHouseNumber,
   getHouseStats,
 } from '../controllers/houseController.js';
-import { rateLimit } from '../middlewares/rateLimit.js';
 
 const router = express.Router();
-
-// Apply rate limiting
-router.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 // GET routes
 router.get('/', getHouses);

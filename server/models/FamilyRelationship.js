@@ -1,4 +1,3 @@
-// models/FamilyRelationship.js - COMPLETE FIXED VERSION
 
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';

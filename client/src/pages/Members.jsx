@@ -1,36 +1,48 @@
-// src/pages/Members.jsx - COMPLETE UPDATED
-// Key changes:
-// - Removed rollNumber column
-// - Added vanshaGenerationNumber, lineageRole, childBirthOrder columns
-// - Member ID (M0001 format) shown
-// - All existing functionality preserved
-
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMembers, deleteMember, exportAllMembers } from '../api/members';
+import { getMembers, deleteMember, exportAllMembers, updateVerification } from '../api/members';
 import Table from '../components/Table';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import MemberProfile from '../components/MemberProfile';
-import { MagnifyingGlassIcon, FunnelIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import {
+  MagnifyingGlassIcon, FunnelIcon, ArrowDownTrayIcon,
+  CheckBadgeIcon, XCircleIcon, ArrowUturnLeftIcon,
+} from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import MemberForm from "../pages/DataEntry";
+import { useLanguage } from '../context/LanguageContext';
+import { provinces, districts } from '../data/nepalLocations';
+
+const EMPTY_FILTERS = {
+  gender: '',
+  status: '',
+  generation: '',
+  verificationStatus: '',
+  family: '',
+  district: '',
+  province: '',
+  house: '',
+  vanshaGenerationNumber: '',
+  lineageRole: '',
+};
+
+const BADGE = 'px-2 py-1 text-xs font-medium rounded-full';
+const VERIFICATION_COLORS = {
+  verified: 'bg-green-100 text-green-800',
+  pending: 'bg-yellow-100 text-yellow-800',
+  rejected: 'bg-red-100 text-red-800',
+};
 
 const Members = () => {
+  const { t } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const searchFromHeader = searchParams.get('search') || '';
+
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState({
-    gender: '',
-    status: '',
-    generation: '',
-    verificationStatus: '',
-    family: '',
-    district: '',
-    province: '',
-    house: '',
-    vanshaGenerationNumber: '',
-    lineageRole: '',
-  });
+  const [search, setSearch] = useState(searchFromHeader);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -39,13 +51,21 @@ const Members = () => {
   const [exporting, setExporting] = useState(false);
   const queryClient = useQueryClient();
 
+  // A search typed in the header arrives in the address: /members?search=...
+  useEffect(() => {
+    if (searchFromHeader) {
+      setSearch(searchFromHeader);
+      setPage(1);
+    }
+  }, [searchFromHeader]);
+
   const { data, isLoading } = useQuery({
     queryKey: ['members', page, search, filters],
-    queryFn: () => getMembers({ 
-      page, 
-      limit: 10, 
+    queryFn: () => getMembers({
+      page,
+      limit: 10,
       search,
-      ...filters 
+      ...filters
     }),
   });
 
@@ -54,12 +74,20 @@ const Members = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['members'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-      toast.success('Member deleted successfully');
+      toast.success(t('member_deleted'));
+    },
+  });
+
+  const verificationMutation = useMutation({
+    mutationFn: ({ id, status }) => updateVerification(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['members'] });
+      toast.success(t('verification_saved'));
     },
   });
 
   const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this member?')) {
+    if (window.confirm(t('delete_member_confirm'))) {
       deleteMutation.mutate(id);
     }
   };
@@ -74,8 +102,20 @@ const Members = () => {
     setIsEditModalOpen(true);
   };
 
-  const handlePrint = (member) => {
-    window.open(`/profile/${member._id}/print`, '_blank');
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPage(1);
+    if (searchFromHeader) setSearchParams({}, { replace: true });
+  };
+
+  const setFilter = (name, value) => {
+    setFilters((current) => ({
+      ...current,
+      [name]: value,
+      // a district belongs to its province
+      ...(name === 'province' ? { district: '' } : {}),
+    }));
+    setPage(1);
   };
 
   const handleExport = async () => {
@@ -85,7 +125,7 @@ const Members = () => {
         ...filters,
         search,
       });
-      
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -94,67 +134,98 @@ const Members = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
-      toast.success('Members exported successfully');
+
+      toast.success(t('members_exported'));
     } catch (error) {
       console.error('Export error:', error);
-      toast.error('Failed to export members');
+      toast.error(t('members_export_failed'));
     } finally {
       setExporting(false);
     }
   };
 
-  // ⭐ UPDATED: Columns — rollNumber removed, vanshaGenerationNumber added
+  const districtOptions = useMemo(
+    () => (filters.province ? districts[filters.province] || [] : Object.values(districts).flat()),
+    [filters.province]
+  );
+
   const columns = [
-    { key: 'photo', label: 'Photo', type: 'image' },
-    { key: 'memberNumber', label: 'Member ID' },
-    { key: 'name', label: 'Name', sortable: true },
-    { key: 'houseNumber', label: 'House No.' },
-    { key: 'familyNumber', label: 'Family No.' },
-    { key: 'vanshaGenerationNumber', label: 'Vanshaj No.' },
-    { key: 'generation', label: 'Gen' },
-    { key: 'lineageRole', label: 'Lineage Role', 
+    { key: 'photo', label: t('col_photo'), type: 'image' },
+    { key: 'memberNumber', label: t('col_member_id') },
+    { key: 'name', label: t('col_name'), sortable: true },
+    { key: 'houseNumber', label: t('col_house'), render: (value, member) => member.family?.house?.houseNumber || value || '-' },
+    { key: 'familyNumber', label: t('col_family'), render: (value, member) => member.family?.familyNumber || '-' },
+    { key: 'vanshaGenerationNumber', label: t('col_vansha') },
+    { key: 'generation', label: t('col_gen') },
+    { key: 'lineageRole', label: t('col_role'),
       render: (value) => {
         const roles = {
-          'lineage_head': 'घरमुली',
-          'lineage_member': 'सदस्य',
-          'spouse': 'श्रीमान/श्रीमती',
-          'other': 'अन्य'
+          'lineage_head': t('role_head'),
+          'lineage_member': t('role_member'),
+          'spouse': t('role_spouse'),
+          'other': t('other'),
         };
-        return roles[value] || value || 'N/A';
+        return roles[value] || value || '-';
       }
     },
-    { key: 'childBirthOrder', label: 'Birth Order' },
-    { key: 'gender', label: 'Gender' },
-    { key: 'phone', label: 'Phone' },
-    { key: 'email', label: 'Email' },
-    { key: 'isAlive', label: 'Status', type: 'status' },
-    { key: 'verificationStatus', label: 'Verification', type: 'verification' },
+    { key: 'childBirthOrder', label: t('col_birth_order') },
+    { key: 'gender', label: t('col_gender'), render: (value) => (value === 'male' ? t('male') : value === 'female' ? t('female') : t('other')) },
+    { key: 'phone', label: t('col_phone') },
+    { key: 'email', label: t('col_email') },
+    { key: 'isAlive', label: t('status'),
+      render: (value) => (
+        <span className={`${BADGE} ${value === false ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-800'}`}>
+          {value === false ? t('deceased') : t('living')}
+        </span>
+      ),
+    },
+    { key: 'verificationStatus', label: t('col_verification'),
+      render: (value) => (
+        <span className={`${BADGE} ${VERIFICATION_COLORS[value] || VERIFICATION_COLORS.pending}`}>
+          {t(value || 'pending')}
+        </span>
+      ),
+    },
   ];
 
-  const handleResetFilters = () => {
-    setFilters({
-      gender: '',
-      status: '',
-      generation: '',
-      verificationStatus: '',
-      family: '',
-      district: '',
-      province: '',
-      house: '',
-      vanshaGenerationNumber: '',
-      lineageRole: '',
-    });
-    setSearch('');
-    setPage(1);
+  // Approve or reject right from the list
+  const verificationActions = (member) => {
+    const current = member.verificationStatus || 'pending';
+    const setStatus = (status) => verificationMutation.mutate({ id: member._id, status });
+    return (
+      <>
+        {current !== 'verified' && (
+          <button onClick={() => setStatus('verified')} className="text-green-600 hover:text-green-800 ml-2" title={t('verify')}>
+            <CheckBadgeIcon className="h-5 w-5" />
+          </button>
+        )}
+        {current !== 'rejected' && (
+          <button onClick={() => setStatus('rejected')} className="text-orange-600 hover:text-orange-800 ml-2" title={t('reject')}>
+            <XCircleIcon className="h-5 w-5" />
+          </button>
+        )}
+        {current !== 'pending' && (
+          <button onClick={() => setStatus('pending')} className="text-gray-500 hover:text-gray-700 ml-2" title={t('set_pending')}>
+            <ArrowUturnLeftIcon className="h-5 w-5" />
+          </button>
+        )}
+      </>
+    );
   };
+
+  const handleResetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    handleSearchChange('');
+  };
+
+  const selectClass = 'px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500';
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Members</h1>
-          <p className="text-gray-600">View and manage all family members</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t('members')}</h1>
+          <p className="text-gray-600">{t('members_subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -164,7 +235,7 @@ const Members = () => {
             className="flex items-center"
           >
             <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
-            {exporting ? 'Exporting...' : 'Export All'}
+            {exporting ? t('exporting') : t('export_all')}
           </Button>
           <Button
             variant="outline"
@@ -172,7 +243,7 @@ const Members = () => {
             className="flex items-center"
           >
             <FunnelIcon className="h-5 w-5 mr-2" />
-            Filter
+            {t('filter')}
           </Button>
           {isFilterOpen && (
             <Button
@@ -180,11 +251,12 @@ const Members = () => {
               onClick={handleResetFilters}
               className="text-sm"
             >
-              Reset
+              {t('reset')}
             </Button>
           )}
         </div>
       </div>
+
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="p-4 border-b border-gray-200">
@@ -192,115 +264,63 @@ const Members = () => {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by Name, Member ID, Vanshaj No., Phone, House Number..."
+              placeholder={t('search_members_placeholder')}
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              onChange={(e) => handleSearchChange(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
           </div>
         </div>
 
+
         {isFilterOpen && (
           <div className="p-4 border-b border-gray-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 bg-gray-50">
-            <select
-              value={filters.gender}
-              onChange={(e) => setFilters({ ...filters, gender: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Genders</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
-            
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="deceased">Deceased</option>
+            <select value={filters.gender} onChange={(e) => setFilter('gender', e.target.value)} className={selectClass}>
+              <option value="">{t('all_genders')}</option>
+              <option value="male">{t('male')}</option>
+              <option value="female">{t('female')}</option>
+              <option value="other">{t('other')}</option>
             </select>
 
-            <select
-              value={filters.generation}
-              onChange={(e) => setFilters({ ...filters, generation: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Generations</option>
-              {[1,2,3,4,5,6,7,8,9,10].map(gen => (
-                <option key={gen} value={gen}>Generation {gen}</option>
-              ))}
+            <select value={filters.status} onChange={(e) => setFilter('status', e.target.value)} className={selectClass}>
+              <option value="">{t('all_status')}</option>
+              <option value="living">{t('living')}</option>
+              <option value="deceased">{t('deceased')}</option>
             </select>
 
-            <select
-              value={filters.verificationStatus}
-              onChange={(e) => setFilters({ ...filters, verificationStatus: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Verification</option>
-              <option value="verified">Verified</option>
-              <option value="pending">Pending</option>
-              <option value="rejected">Rejected</option>
+            <select value={filters.generation} onChange={(e) => setFilter('generation', e.target.value)} className={selectClass}>
+              <option value="">{t('all_generations')}</option>
+              {Array.from({ length: 20 }, (_, i) => i + 1).map(gen => (<option key={gen} value={gen}>{t('generation')} {gen}</option>))}
             </select>
 
-            <input
-              type="text"
-              placeholder="House Number"
-              value={filters.house}
-              onChange={(e) => setFilters({ ...filters, house: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-
-            <input
-              type="text"
-              placeholder="Vanshaj Number"
-              value={filters.vanshaGenerationNumber}
-              onChange={(e) => setFilters({ ...filters, vanshaGenerationNumber: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-
-            <select
-              value={filters.lineageRole}
-              onChange={(e) => setFilters({ ...filters, lineageRole: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Lineage Roles</option>
-              <option value="lineage_head">Lineage Head</option>
-              <option value="lineage_member">Lineage Member</option>
-              <option value="spouse">Spouse</option>
-              <option value="other">Other</option>
+            <select value={filters.verificationStatus} onChange={(e) => setFilter('verificationStatus', e.target.value)} className={selectClass}>
+              <option value="">{t('all_verification')}</option>
+              <option value="verified">{t('verified')}</option>
+              <option value="pending">{t('pending')}</option>
+              <option value="rejected">{t('rejected')}</option>
             </select>
 
-            <select
-              value={filters.district}
-              onChange={(e) => setFilters({ ...filters, district: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Districts</option>
-              <option value="Kathmandu">Kathmandu</option>
-              <option value="Lalitpur">Lalitpur</option>
-              <option value="Bhaktapur">Bhaktapur</option>
+            <input type="text" placeholder={t('house_number')} value={filters.house} onChange={(e) => setFilter('house', e.target.value)} className={selectClass} />
+
+            <input type="text" placeholder={t('vansha_number')} value={filters.vanshaGenerationNumber} onChange={(e) => setFilter('vanshaGenerationNumber', e.target.value)} className={selectClass} />
+
+            <select value={filters.lineageRole} onChange={(e) => setFilter('lineageRole', e.target.value)} className={selectClass}>
+              <option value="">{t('all_roles')}</option>
+              <option value="lineage_head">{t('role_head')}</option>
+              <option value="lineage_member">{t('role_member')}</option>
+              <option value="spouse">{t('role_spouse')}</option>
+              <option value="other">{t('other')}</option>
             </select>
 
-            <select
-              value={filters.province}
-              onChange={(e) => setFilters({ ...filters, province: e.target.value })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">All Provinces</option>
-              <option value="1">Province 1</option>
-              <option value="2">Province 2</option>
-              <option value="3">Province 3</option>
-              <option value="4">Province 4</option>
-              <option value="5">Province 5</option>
-              <option value="6">Province 6</option>
-              <option value="7">Province 7</option>
+            {/* The same names the member form stores */}
+            <select value={filters.province} onChange={(e) => setFilter('province', e.target.value)} className={selectClass}>
+              <option value="">{t('all_provinces')}</option>
+              {provinces.map((province) => (<option key={province} value={province}>{province}</option>))}
+            </select>
+
+            <select value={filters.district} onChange={(e) => setFilter('district', e.target.value)} className={selectClass}>
+              <option value="">{t('all_districts')}</option>
+              {districtOptions.map((district) => (<option key={district} value={district}>{district}</option>))}
             </select>
           </div>
         )}
@@ -312,7 +332,7 @@ const Members = () => {
           onView={handleView}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onPrint={handlePrint}
+          customActions={verificationActions}
           pagination={{
             currentPage: data?.pagination?.page || 1,
             totalPages: data?.pagination?.pages || 1,
@@ -321,35 +341,17 @@ const Members = () => {
         />
       </div>
 
-      <Modal
-        isOpen={isProfileOpen}
-        onClose={() => {
-          setIsProfileOpen(false);
-          setSelectedMember(null);
-        }}
-        title="Member Profile"
-        size="xl"
-      >
+
+      <Modal isOpen={isProfileOpen} onClose={() => { setIsProfileOpen(false); setSelectedMember(null); }} title={t('member_profile')} size="xl">
         {selectedMember && <MemberProfile member={selectedMember} />}
       </Modal>
 
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false);
-          setEditingMember(null);
-        }}
-        title="Edit Member"
-        size="xl"
-      >
+      <Modal isOpen={isEditModalOpen} onClose={() => { setIsEditModalOpen(false); setEditingMember(null); }} title={t('edit_member')} size="xl">
         <MemberForm
           member={editingMember}
           onSuccess={() => {
             setIsEditModalOpen(false);
             setEditingMember(null);
-            queryClient.invalidateQueries({ queryKey: ['members'] });
-            queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-            toast.success('Member updated successfully');
           }}
           onCancel={() => {
             setIsEditModalOpen(false);

@@ -1,5 +1,3 @@
-// src/components/LocationSelect.jsx
-
 import React, { useMemo } from "react";
 import Select from "react-select";
 import { FaLocationDot } from "react-icons/fa6";
@@ -19,7 +17,7 @@ const LocationSelect = ({
   required = false,
   placeholder = "Select...",
 }) => {
-  // Generate ward numbers (1-32)
+ 
   const wards = useMemo(
     () =>
       Array.from({ length: 32 }, (_, i) => ({
@@ -29,7 +27,7 @@ const LocationSelect = ({
     []
   );
 
-  // Generate dropdown options
+  
   const options = useMemo(() => {
     switch (type) {
       case "province":

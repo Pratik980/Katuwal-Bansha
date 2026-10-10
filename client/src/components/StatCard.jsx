@@ -1,4 +1,3 @@
-// src/components/StatCard.jsx
 const colorMap = {
   green: 'bg-green-100 text-green-600',
   blue: 'bg-blue-100 text-blue-600',

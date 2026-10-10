@@ -17,12 +17,8 @@ import {
 } from '../controllers/familyController.js';
 import { validate, familyValidation } from '../middlewares/validation.js';
 import { uploadSingleFamilyPhoto, handleUpload } from '../middlewares/upload.js';
-import { rateLimit } from '../middlewares/rateLimit.js';
 
 const router = express.Router();
-
-// Apply rate limiting
-router.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 // GET routes - ORDER MATTERS! Put specific routes before parameter routes
 router.get('/', getFamilies);

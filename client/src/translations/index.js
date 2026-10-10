@@ -1,6 +1,74 @@
 // src/translations/index.js - COMPLETE
 export const translations = {
   en: {
+    // Pages
+    page_not_found: 'Page not found',
+    page_not_found_desc: 'There is nothing at this address.',
+    back_to_dashboard: 'Back to Dashboard',
+    dashboard_subtitle: 'Welcome to Family Tree Management System',
+    failed_dashboard: 'Failed to load dashboard data',
+    members_subtitle: 'View and manage all family members',
+    notifications_subtitle: 'Stay updated with latest activities',
+
+    // Members list
+    filter: 'Filter',
+    exporting: 'Exporting...',
+    search_members_placeholder: 'Search by Name, Member ID, Vansha/Generation, Phone, House Number...',
+    all_genders: 'All Genders',
+    male: 'Male',
+    female: 'Female',
+    living: 'Living',
+    deceased: 'Deceased',
+    all_generations: 'All Generations',
+    generation: 'Generation',
+    all_verification: 'All Verification',
+    verified: 'Verified',
+    rejected: 'Rejected',
+    house_number: 'House Number',
+    vansha_number: 'Vansha/Generation Number',
+    all_roles: 'All Lineage Roles',
+    role_head: 'Head of family',
+    role_member: 'Member',
+    role_spouse: 'Spouse',
+    all_provinces: 'All Provinces',
+    all_districts: 'All Districts',
+    col_photo: 'Photo',
+    col_member_id: 'Member ID',
+    col_name: 'Name',
+    col_house: 'House No.',
+    col_family: 'Family No.',
+    col_vansha: 'Vansha/Gen',
+    col_gen: 'Gen',
+    col_role: 'Lineage Role',
+    col_birth_order: 'Birth Order',
+    col_gender: 'Gender',
+    col_phone: 'Phone',
+    col_email: 'Email',
+    col_verification: 'Verification',
+    verify: 'Verify',
+    reject: 'Reject',
+    set_pending: 'Set back to pending',
+    member_profile: 'Member Profile',
+    edit_member: 'Edit Member',
+    delete_member_confirm: 'Are you sure you want to delete this member?',
+    member_deleted: 'Member deleted successfully',
+    members_exported: 'Members exported successfully',
+    members_export_failed: 'Failed to export members',
+    verification_saved: 'Verification updated',
+
+    // Notifications
+    unread: 'unread',
+    mark_all_read: 'Mark All Read',
+    mark_as_read: 'Mark as read',
+    delete_read: 'Delete read',
+    delete_all: 'Delete all',
+    delete_all_confirm: 'Delete every notification? This cannot be undone.',
+    delete_read_confirm: 'Delete all notifications that have been read?',
+    no_notifications: 'No notifications',
+    all_caught_up: 'All caught up!',
+    new_badge: 'New',
+    page_of: 'Page',
+    of: 'of',
     // Navigation
     dashboard: 'Dashboard',
     members: 'Members',
@@ -14,14 +82,14 @@ export const translations = {
     reports: 'Reports',
     backups: 'Backups',
     settings: 'Settings',
-    
+
     // App
     app_name: 'Katuwal Bansha',
     management_system: 'Management System',
     app_description_short: 'Katuwal Bansha Batika is Family Tree System',
     digital_genealogy: 'Modern Digital Genealogy Platform',
     app_description: 'Family Tree Management System',
-    
+
     // Dashboard
     welcome_back: 'Welcome back',
     total_members: 'Total Members',
@@ -34,7 +102,7 @@ export const translations = {
     recent_members: 'Recent Members',
     recent_donations: 'Recent Donations',
     days_ago: 'days ago',
-    
+
     // Common
     search: 'Search',
     search_members_families: 'Search members, families...',
@@ -51,7 +119,7 @@ export const translations = {
     previous: 'Previous',
     optional: 'Optional',
     select: 'Select',
-    
+
     // Theme
     theme: 'Theme',
     light: 'Light',
@@ -61,14 +129,14 @@ export const translations = {
     theme_light_desc: 'Light mode enabled',
     theme_dark_desc: 'Dark mode enabled',
     theme_system_desc: 'Follows your system preference',
-    
+
     // Language
     language: 'Language',
     english: 'English',
     nepali: 'नेपाली',
     select_language: 'Select Language',
     language_changed: 'Language changed successfully',
-    
+
     // Settings
     appearance_settings: 'Appearance Settings',
     language_settings: 'Language Settings',
@@ -91,7 +159,7 @@ export const translations = {
     saving: 'Saving...',
     reset: 'Reset',
     about: 'About',
-    
+
     // Notifications
     email_notifications: 'Email Notifications',
     email_notifications_desc: 'Receive notifications via email',
@@ -99,7 +167,7 @@ export const translations = {
     push_notifications_desc: 'Receive push notifications',
     donation_notifications: 'Donation Notifications',
     donation_notifications_desc: 'Notify on new donations',
-    
+
     // System
     auto_backup: 'Auto Backup',
     auto_backup_desc: 'Automatically backup data',
@@ -107,7 +175,7 @@ export const translations = {
     daily: 'Daily',
     weekly: 'Weekly',
     monthly: 'Monthly',
-    
+
     // Donation
     add_donation: 'Add Donation',
     track_donations: 'Track and manage all donations',
@@ -175,13 +243,81 @@ export const translations = {
     scan_qr: 'Scan this QR code to make a donation',
     fixed_qr: 'Fixed QR code for all donations',
     download_qr: 'Download QR Code',
-    
+
     // Reports
     family_report: 'Family Report',
     member_report: 'Member Report',
     donation_report: 'Donation Report',
   },
   ne: {
+    // Pages
+    page_not_found: 'पेज फेला परेन',
+    page_not_found_desc: 'यो ठेगानामा केही छैन।',
+    back_to_dashboard: 'ड्यासबोर्डमा फर्कनुहोस्',
+    dashboard_subtitle: 'वंशावली व्यवस्थापन प्रणालीमा स्वागत छ',
+    failed_dashboard: 'ड्यासबोर्डको विवरण ल्याउन सकिएन',
+    members_subtitle: 'सबै सदस्यहरू हेर्नुहोस् र व्यवस्थापन गर्नुहोस्',
+    notifications_subtitle: 'पछिल्ला गतिविधिबारे जानकारी',
+
+    // Members list
+    filter: 'छान्नुहोस्',
+    exporting: 'निर्यात हुँदै...',
+    search_members_placeholder: 'नाम, सदस्य नं., वंश नं., फोन, घर नम्बरबाट खोज्नुहोस्...',
+    all_genders: 'सबै लिङ्ग',
+    male: 'पुरुष',
+    female: 'महिला',
+    living: 'जीवित',
+    deceased: 'मृत',
+    all_generations: 'सबै पुस्ता',
+    generation: 'पुस्ता',
+    all_verification: 'सबै प्रमाणीकरण',
+    verified: 'प्रमाणित',
+    rejected: 'अस्वीकृत',
+    house_number: 'घर नम्बर',
+    vansha_number: 'वंश नम्बर',
+    all_roles: 'सबै भूमिका',
+    role_head: 'घरमुली',
+    role_member: 'सदस्य',
+    role_spouse: 'श्रीमान/श्रीमती',
+    all_provinces: 'सबै प्रदेश',
+    all_districts: 'सबै जिल्ला',
+    col_photo: 'फोटो',
+    col_member_id: 'सदस्य नं.',
+    col_name: 'नाम',
+    col_house: 'घर नं.',
+    col_family: 'परिवार नं.',
+    col_vansha: 'वंश नं.',
+    col_gen: 'पुस्ता',
+    col_role: 'भूमिका',
+    col_birth_order: 'सन्तान क्रम',
+    col_gender: 'लिङ्ग',
+    col_phone: 'फोन',
+    col_email: 'इमेल',
+    col_verification: 'प्रमाणीकरण',
+    verify: 'प्रमाणित गर्नुहोस्',
+    reject: 'अस्वीकार गर्नुहोस्',
+    set_pending: 'फेरि बाँकीमा राख्नुहोस्',
+    member_profile: 'सदस्य विवरण',
+    edit_member: 'सदस्य सम्पादन',
+    delete_member_confirm: 'के तपाईं यो सदस्य मेटाउन निश्चित हुनुहुन्छ?',
+    member_deleted: 'सदस्य मेटाइयो',
+    members_exported: 'सदस्यहरू निर्यात भयो',
+    members_export_failed: 'सदस्यहरू निर्यात गर्न सकिएन',
+    verification_saved: 'प्रमाणीकरण अद्यावधिक भयो',
+
+    // Notifications
+    unread: 'नपढिएको',
+    mark_all_read: 'सबै पढिएको बनाउनुहोस्',
+    mark_as_read: 'पढिएको बनाउनुहोस्',
+    delete_read: 'पढिएका मेटाउनुहोस्',
+    delete_all: 'सबै मेटाउनुहोस्',
+    delete_all_confirm: 'सबै सूचना मेटाउने? यो फिर्ता हुँदैन।',
+    delete_read_confirm: 'पढिसकिएका सबै सूचना मेटाउने?',
+    no_notifications: 'कुनै सूचना छैन',
+    all_caught_up: 'सबै हेरिसकियो!',
+    new_badge: 'नयाँ',
+    page_of: 'पाना',
+    of: 'मध्ये',
     // Navigation
     dashboard: 'ड्यासबोर्ड',
     members: 'सदस्यहरू',
@@ -195,14 +331,14 @@ export const translations = {
     reports: 'प्रतिवेदनहरू',
     backups: 'ब्याकअपहरू',
     settings: 'सेटिङहरू',
-    
+
     // App
     app_name: 'कटुवाल वंश',
     management_system: 'व्यवस्थापन प्रणाली',
     app_description_short: 'कटुवाल वंश बाटिका पारिवारिक वृक्ष प्रणाली हो',
     digital_genealogy: 'आधुनिक डिजिटल वंशावली प्लेटफर्म',
     app_description: 'पारिवारिक वृक्ष व्यवस्थापन प्रणाली',
-    
+
     // Dashboard
     welcome_back: 'फेरि स्वागत छ',
     total_members: 'कुल सदस्य',
@@ -215,7 +351,7 @@ export const translations = {
     recent_members: 'हालका सदस्यहरू',
     recent_donations: 'हालका दानहरू',
     days_ago: 'दिन अघि',
-    
+
     // Common
     search: 'खोज्नुहोस्',
     search_members_families: 'सदस्य, परिवार खोज्नुहोस्...',
@@ -232,7 +368,7 @@ export const translations = {
     previous: 'अघिल्लो',
     optional: 'वैकल्पिक',
     select: 'छान्नुहोस्',
-    
+
     // Theme
     theme: 'थीम',
     light: 'उज्यालो',
@@ -242,14 +378,14 @@ export const translations = {
     theme_light_desc: 'उज्यालो मोड सक्रिय',
     theme_dark_desc: 'अँध्यारो मोड सक्रिय',
     theme_system_desc: 'प्रणालीको प्राथमिकता अनुसरण गर्दछ',
-    
+
     // Language
     language: 'भाषा',
     english: 'English',
     nepali: 'नेपाली',
     select_language: 'भाषा छान्नुहोस्',
     language_changed: 'भाषा सफलतापूर्वक परिवर्तन गरियो',
-    
+
     // Settings
     appearance_settings: 'उपस्थिति सेटिङहरू',
     language_settings: 'भाषा सेटिङहरू',
@@ -272,7 +408,7 @@ export const translations = {
     saving: 'सुरक्षित गर्दै...',
     reset: 'रिसेट',
     about: 'बारेमा',
-    
+
     // Notifications
     email_notifications: 'इमेल सूचनाहरू',
     email_notifications_desc: 'इमेल मार्फत सूचनाहरू प्राप्त गर्नुहोस्',
@@ -280,7 +416,7 @@ export const translations = {
     push_notifications_desc: 'पुश सूचनाहरू प्राप्त गर्नुहोस्',
     donation_notifications: 'दान सूचनाहरू',
     donation_notifications_desc: 'नयाँ दानमा सूचित गर्नुहोस्',
-    
+
     // System
     auto_backup: 'स्वचालित ब्याकअप',
     auto_backup_desc: 'स्वचालित रूपमा डाटा ब्याकअप गर्नुहोस्',
@@ -288,7 +424,7 @@ export const translations = {
     daily: 'दैनिक',
     weekly: 'साप्ताहिक',
     monthly: 'मासिक',
-    
+
     // Donation
     add_donation: 'दान थप्नुहोस्',
     track_donations: 'सबै दानहरू ट्र्याक र व्यवस्थापन गर्नुहोस्',
@@ -356,7 +492,7 @@ export const translations = {
     scan_qr: 'दान गर्न यो क्यूआर कोड स्क्यान गर्नुहोस्',
     fixed_qr: 'सबै दानको लागि निश्चित क्यूआर कोड',
     download_qr: 'क्यूआर कोड डाउनलोड गर्नुहोस्',
-    
+
     // Reports
     family_report: 'परिवार प्रतिवेदन',
     member_report: 'सदस्य प्रतिवेदन',

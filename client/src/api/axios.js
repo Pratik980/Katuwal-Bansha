@@ -27,13 +27,15 @@ axiosInstance.interceptors.response.use(
     return response;
   },
   (error) => {
-    const message = error.response?.data?.message || 'Something went wrong';
-    
-    // Don't show toast for 404 errors in search
-    if (error.response?.status !== 404) {
+    const data = error.response?.data;
+    const message = data?.message || data?.errors?.[0]?.message || 'Something went wrong';
+
+    // A possible duplicate is a question for the user, asked by the form itself.
+    // Don't show toast for 404 errors in search.
+    if (error.response?.status !== 404 && data?.code !== 'POSSIBLE_DUPLICATE') {
       toast.error(message);
     }
-    
+
     return Promise.reject(error);
   }
 );

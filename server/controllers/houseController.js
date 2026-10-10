@@ -1,9 +1,10 @@
-// controllers/houseController.js
+
 import House from '../models/House.js';
 import Family from '../models/Family.js';
 import Member from '../models/Member.js';
 import { io } from '../server.js';
 import Notification from '../models/Notification.js';
+import { containsText } from '../utils/text.js';
 
 export const getHouses = async (req, res) => {
   try {
@@ -12,12 +13,13 @@ export const getHouses = async (req, res) => {
 
     let query = {};
     if (search) {
+      const text = containsText(search);
       query = {
         $or: [
-          { houseNumber: { $regex: search, $options: 'i' } },
-          { houseName: { $regex: search, $options: 'i' } },
-          { address: { $regex: search, $options: 'i' } },
-          { district: { $regex: search, $options: 'i' } },
+          { houseNumber: text },
+          { houseName: text },
+          { address: text },
+          { district: text },
         ],
       };
     }
@@ -30,7 +32,7 @@ export const getHouses = async (req, res) => {
       House.countDocuments(query),
     ]);
 
-    // Get family counts for each house
+ 
     const housesWithCounts = await Promise.all(houses.map(async (house) => {
       const familyCount = await Family.countDocuments({ house: house._id });
       const memberCount = await Member.countDocuments({ family: { $in: await Family.find({ house: house._id }).distinct('_id') } });
@@ -181,9 +183,13 @@ export const deleteHouse = async (req, res) => {
 
 export const getNextHouseNumber = async (req, res) => {
   try {
-    const lastHouse = await House.findOne().sort({ houseNumber: -1 });
-    const nextNumber = lastHouse ? parseInt(lastHouse.houseNumber) + 1 : 1;
-    res.json({ nextHouseNumber: String(nextNumber) });
+    // House numbers are text, so the largest is found by number ("9" sorts after "10" as text)
+    const used = await House.find().distinct('houseNumber');
+    const largest = used.reduce((max, value) => {
+      const number = parseInt(value, 10);
+      return Number.isNaN(number) ? max : Math.max(max, number);
+    }, 0);
+    res.json({ nextHouseNumber: String(largest + 1) });
   } catch (error) {
     console.error('getNextHouseNumber Error:', error);
     res.status(500).json({ message: error.message });

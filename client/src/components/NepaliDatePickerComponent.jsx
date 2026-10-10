@@ -1,23 +1,15 @@
-// src/components/NepaliDatePickerComponent.jsx - COMPLETE UPDATED
-// Features:
-// - Manual typing support (both AD and BS dates)
-// - Automatic English (AD) → Nepali (BS) conversion
-// - Calendar picker
-// - Validation
-// - Mobile-friendly
-// - Not clipped by parent containers
+// src/components/NepaliDatePickerComponent.jsx
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { FaCalendar, FaTimes } from 'react-icons/fa';
+import { adToBs, bsToAd, NEPALI_MONTHS, getDaysInNepaliMonth, parseDateString, isApproximateBsYear, BS_YEAR_RANGE } from '../utils/nepaliDateConverter';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { FaCalendarAlt, FaChevronLeft, FaChevronRight, FaTimes, FaGlobe } from 'react-icons/fa';
-import {
-  NEPALI_MONTHS,
-  NEPALI_MONTHS_EN,
-  getDaysInNepaliMonth,
-  adToBs,
-  bsToAd,
-  parseDateString,
-} from '../utils/nepaliDateConverter';
+const pad = (number) => String(number).padStart(2, '0');
+const formatParts = ({ year, month, day }) => `${year}-${pad(month)}-${pad(day)}`;
+const formatAd = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const looksComplete = (text) => /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test((text || '').trim());
 
+// The value this field holds is always a BS date (YYYY-MM-DD).
+// Type it, pick it from the calendar, or switch to AD to enter an English date.
 const NepaliDatePickerComponent = ({
   label,
   name,
@@ -25,64 +17,47 @@ const NepaliDatePickerComponent = ({
   onChange,
   required = false,
   error,
-  placeholder = 'मिति छान्नुहोस् वा टाइप गर्नुहोस्',
   className = '',
   disabled = false,
-  showAdInput = true,
+  placeholder = 'YYYY-MM-DD (BS)',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [inputMode, setInputMode] = useState('BS'); // 'BS' or 'AD'
-  const [viewYear, setViewYear] = useState(2081);
+  const [inputValue, setInputValue] = useState(value || '');
+  const [calendar, setCalendar] = useState('BS');
+  const [viewYear, setViewYear] = useState(2080);
   const [viewMonth, setViewMonth] = useState(1);
-  const [parseError, setParseError] = useState('');
-  const dropdownRef = useRef(null);
+  const [yearText, setYearText] = useState(null); // text of the year box while it is being typed in
+  const [popupStyle, setPopupStyle] = useState({});
+  const pickerRef = useRef(null);
   const inputRef = useRef(null);
+  const keepTypedText = useRef(false);
 
-  // ============================================================
-  // Parse initial value into BS date
-  // ============================================================
-  const bsValue = useMemo(() => {
-    if (!value) return null;
-
-    // Try to parse as BS string first (YYYY-MM-DD with year 2000-2090)
-    if (typeof value === 'string') {
-      const parsed = parseDateString(value);
-      if (parsed) {
-        if (parsed.type === 'BS') {
-          return { year: parsed.year, month: parsed.month, day: parsed.day };
-        }
-        // AD date - convert to BS
-        const adDate = new Date(parsed.year, parsed.month - 1, parsed.day);
-        return adToBs(adDate);
-      }
+  // Follow the value from outside, but never rewrite what is being typed:
+  // "2047-02-1" must stay as typed so that "5" can still follow it.
+  useEffect(() => {
+    if (keepTypedText.current) {
+      keepTypedText.current = false;
+      return;
     }
-
-    // If Date object - convert to BS
-    if (value instanceof Date) {
-      return adToBs(value);
-    }
-
-    return null;
+    setInputValue((current) => {
+      const typed = parseDateString(current);
+      return typed && formatParts(typed) === value ? current : value || '';
+    });
   }, [value]);
 
-  // ============================================================
-  // Sync view year/month with value
-  // ============================================================
   useEffect(() => {
-    if (bsValue) {
-      setViewYear(bsValue.year);
-      setViewMonth(bsValue.month);
-      setInputValue(bsValue.formatted);
+    if (!isOpen) return;
+    const selected = parseDateString(value);
+    const start = selected || adToBs(new Date());
+    if (start) {
+      setViewYear(start.year);
+      setViewMonth(start.month);
     }
-  }, [bsValue]);
+  }, [isOpen, value]);
 
-  // ============================================================
-  // Close on outside click
-  // ============================================================
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
@@ -90,361 +65,239 @@ const NepaliDatePickerComponent = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ============================================================
-  // Build calendar grid
-  // ============================================================
-  const calendarDays = useMemo(() => {
-    const daysInMonth = getDaysInNepaliMonth(viewYear, viewMonth);
-    const days = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      days.push(d);
+  const updatePopupPosition = useCallback(() => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setPopupStyle({
+        position: 'fixed',
+        top: `${rect.bottom + 4}px`,
+        left: `${rect.left}px`,
+        minWidth: `${rect.width}px`,
+      });
     }
-    return days;
-  }, [viewYear, viewMonth]);
+  }, []);
 
-  // ============================================================
-  // Navigation
-  // ============================================================
-  const goToPrevMonth = () => {
-    if (viewMonth === 1) {
-      setViewMonth(12);
-      setViewYear(viewYear - 1);
-    } else {
-      setViewMonth(viewMonth - 1);
+  useEffect(() => {
+    if (isOpen) {
+      updatePopupPosition();
+      window.addEventListener('scroll', updatePopupPosition, true);
+      window.addEventListener('resize', updatePopupPosition);
+      return () => {
+        window.removeEventListener('scroll', updatePopupPosition, true);
+        window.removeEventListener('resize', updatePopupPosition);
+      };
     }
+  }, [isOpen, updatePopupPosition]);
+
+  const commitBs = (parts) => {
+    onChange(name, formatParts(parts));
+    setViewYear(parts.year);
+    setViewMonth(parts.month);
   };
 
-  const goToNextMonth = () => {
-    if (viewMonth === 12) {
-      setViewMonth(1);
-      setViewYear(viewYear + 1);
-    } else {
-      setViewMonth(viewMonth + 1);
-    }
+  // An English date is converted once it is complete, and the field goes back to BS
+  const commitAd = (text) => {
+    const parsed = parseDateString(text, 'AD');
+    if (!parsed) return false;
+    const bs = adToBs(new Date(parsed.year, parsed.month - 1, parsed.day));
+    setCalendar('BS');
+    setInputValue(bs.formatted);
+    commitBs(bs);
+    return true;
   };
 
-  // ============================================================
-  // Handle date selection from calendar
-  // ============================================================
-  const handleDateSelect = (day) => {
-    const bsDate = { year: viewYear, month: viewMonth, day };
-    const formatted = `${viewYear}-${String(viewMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    
-    setInputValue(formatted);
-    setParseError('');
-    setIsOpen(false);
-
-    if (onChange) {
-      onChange(name, formatted);
-    }
-  };
-
-  // ============================================================
-  // Handle manual input change
-  // ============================================================
   const handleInputChange = (e) => {
-    const val = e.target.value;
-    setInputValue(val);
-    setParseError('');
+    const text = e.target.value;
+    setInputValue(text);
+    if (calendar === 'AD') return;
 
-    // Try to parse as user types
-    if (!val.trim()) {
-      if (onChange) onChange(name, '');
-      return;
-    }
-
-    // Only validate on complete dates
-    const parsed = parseDateString(val);
-    if (parsed) {
-      // If BS date
-      if (parsed.type === 'BS') {
-        // Validate BS date
-        const maxDay = getDaysInNepaliMonth(parsed.year, parsed.month);
-        if (parsed.day > maxDay) {
-          setParseError(`यो महिनामा ${maxDay} दिन मात्र छ`);
-          return;
-        }
-        if (onChange) onChange(name, parsed.year + '-' + String(parsed.month).padStart(2, '0') + '-' + String(parsed.day).padStart(2, '0'));
-        setViewYear(parsed.year);
-        setViewMonth(parsed.month);
-      } else {
-        // AD date - convert to BS
-        const adDate = new Date(parsed.year, parsed.month - 1, parsed.day);
-        if (!isNaN(adDate.getTime())) {
-          const bsDate = adToBs(adDate);
-          if (bsDate) {
-            setViewYear(bsDate.year);
-            setViewMonth(bsDate.month);
-            if (onChange) onChange(name, bsDate.formatted);
-          }
-        }
-      }
-    }
+    const parsed = parseDateString(text);
+    if (parsed) commitBs(parsed);
   };
 
-  // ============================================================
-  // Handle blur - validate final value
-  // ============================================================
-  const handleBlur = () => {
-    if (!inputValue.trim()) return;
-
+  const handleInputBlur = () => {
+    if (!inputValue) {
+      onChange(name, '');
+      return;
+    }
+    if (calendar === 'AD') {
+      if (!commitAd(inputValue)) {
+        setCalendar('BS');
+        setInputValue(value || '');
+      }
+      return;
+    }
     const parsed = parseDateString(inputValue);
-    if (!parsed) {
-      setParseError('अवैध मिति ढाँचा। YYYY-MM-DD प्रयोग गर्नुहोस्');
-      return;
-    }
-
-    if (parsed.type === 'BS') {
-      const maxDay = getDaysInNepaliMonth(parsed.year, parsed.month);
-      if (parsed.day > maxDay) {
-        setParseError(`यो महिनामा ${maxDay} दिन मात्र छ`);
-        return;
-      }
-      setParseError('');
-      if (onChange) onChange(name, parsed.year + '-' + String(parsed.month).padStart(2, '0') + '-' + String(parsed.day).padStart(2, '0'));
-    } else {
-      const adDate = new Date(parsed.year, parsed.month - 1, parsed.day);
-      if (isNaN(adDate.getTime())) {
-        setParseError('अवैध अंग्रेजी मिति');
-        return;
-      }
-      const bsDate = adToBs(adDate);
-      if (bsDate) {
-        setParseError('');
-        if (onChange) onChange(name, bsDate.formatted);
-      }
+    if (parsed) {
+      setInputValue(formatParts(parsed));
+    } else if (inputValue !== value) {
+      // Not a real date: leave the text and its warning on screen, and hold no date at all
+      keepTypedText.current = !!value;
+      onChange(name, '');
     }
   };
 
-  // ============================================================
-  // Handle key down
-  // ============================================================
   const handleKeyDown = (e) => {
-    if (e.key === 'Escape') {
-      setIsOpen(false);
-    }
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && calendar === 'AD' && commitAd(inputValue)) {
       e.preventDefault();
-      handleBlur();
-      setIsOpen(false);
     }
   };
 
-  // ============================================================
-  // Clear value
-  // ============================================================
-  const clearValue = (e) => {
+  const handleDaySelect = (day) => {
+    const parts = { year: viewYear, month: viewMonth, day };
+    setCalendar('BS');
+    setInputValue(formatParts(parts));
+    commitBs(parts);
+    setIsOpen(false);
+  };
+
+  const handleClear = (e) => {
     e.stopPropagation();
     setInputValue('');
-    setParseError('');
-    if (onChange) onChange(name, '');
+    onChange(name, '');
   };
 
-  // ============================================================
-  // Toggle input mode (BS/AD)
-  // ============================================================
-  const toggleInputMode = () => {
-    setInputMode(prev => prev === 'BS' ? 'AD' : 'BS');
-    setInputValue('');
-    setParseError('');
+  const toggleCalendar = () => {
+    setCalendar((current) => (current === 'BS' ? 'AD' : 'BS'));
+    setInputValue(calendar === 'BS' ? '' : value || '');
+    inputRef.current?.focus();
   };
 
-  // ============================================================
-  // Get display placeholder based on mode
-  // ============================================================
-  const getPlaceholder = () => {
-    if (inputMode === 'AD') {
-      return 'YYYY-MM-DD (English)';
+  const moveView = (months) => {
+    const index = viewYear * 12 + (viewMonth - 1) + months;
+    const year = Math.floor(index / 12);
+    if (year < BS_YEAR_RANGE.min || year > BS_YEAR_RANGE.max) return;
+    setViewYear(year);
+    setViewMonth((index % 12) + 1);
+  };
+
+  // What the entered date is in the other calendar, so a slip is easy to notice
+  const hint = (() => {
+    const text = (inputValue || '').trim();
+    if (!text) return null;
+
+    if (calendar === 'AD') {
+      const parsed = parseDateString(text, 'AD');
+      if (parsed) return { text: `= BS ${adToBs(new Date(parsed.year, parsed.month - 1, parsed.day)).formatted}` };
+      return looksComplete(text) ? { text: 'यो अंग्रेजी मिति मिलेन', invalid: true } : null;
     }
-    return placeholder;
+
+    const parsed = parseDateString(text);
+    if (parsed) {
+      const approximate = isApproximateBsYear(parsed.year);
+      return { text: `= AD ${formatAd(bsToAd(parsed.year, parsed.month, parsed.day))}${approximate ? ' (अनुमानित)' : ''}` };
+    }
+    if (text === value) return null; // an older record's date, shown as stored
+    return looksComplete(text)
+      ? { text: 'यो मिति नेपाली पात्रोमा छैन', invalid: true }
+      : { text: 'मिति YYYY-MM-DD ढाँचामा लेख्नुहोस्', invalid: !isOpen };
+  })();
+
+  const renderCalendar = () => {
+    const daysInMonth = getDaysInNepaliMonth(viewYear, viewMonth);
+    const firstDayOfMonth = bsToAd(viewYear, viewMonth, 1);
+    const startDayOfWeek = firstDayOfMonth ? firstDayOfMonth.getDay() : 0;
+
+    const days = [];
+    for (let i = 0; i < startDayOfWeek; i++) {
+      days.push(<div key={`empty-${i}`} className="w-8 h-8" />);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isSelected = value === `${viewYear}-${pad(viewMonth)}-${pad(d)}`;
+      days.push(
+        <button
+          key={d}
+          type="button"
+          onClick={() => handleDaySelect(d)}
+          className={`w-8 h-8 rounded-full text-xs transition-colors ${isSelected ? 'bg-green-500 text-white' : 'hover:bg-green-100 text-gray-700'}`}
+        >
+          {d}
+        </button>
+      );
+    }
+
+    return (
+      <div className="p-3">
+        <div className="flex items-center justify-between gap-1 mb-3">
+          <div className="flex">
+            <button type="button" onClick={() => moveView(-12)} title="अघिल्लो साल" className="p-1 hover:bg-gray-100 rounded-full text-xs">&laquo;</button>
+            <button type="button" onClick={() => moveView(-1)} title="अघिल्लो महिना" className="p-1 hover:bg-gray-100 rounded-full text-xs">&lt;</button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold">{NEPALI_MONTHS[viewMonth - 1]}</span>
+            <input
+              type="number"
+              value={yearText ?? viewYear}
+              onFocus={() => setYearText(String(viewYear))}
+              onBlur={() => setYearText(null)}
+              min={BS_YEAR_RANGE.min}
+              max={BS_YEAR_RANGE.max}
+              title="साल"
+              onChange={(e) => {
+                setYearText(e.target.value);
+                const year = parseInt(e.target.value, 10);
+                if (year >= BS_YEAR_RANGE.min && year <= BS_YEAR_RANGE.max) setViewYear(year);
+              }}
+              className="w-16 text-sm font-semibold text-center border border-gray-200 rounded-md py-0.5 focus:outline-none focus:border-green-500"
+            />
+          </div>
+          <div className="flex">
+            <button type="button" onClick={() => moveView(1)} title="अर्को महिना" className="p-1 hover:bg-gray-100 rounded-full text-xs">&gt;</button>
+            <button type="button" onClick={() => moveView(12)} title="अर्को साल" className="p-1 hover:bg-gray-100 rounded-full text-xs">&raquo;</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {['आ', 'सो', 'मं', 'बु', 'बि', 'शु', 'श'].map(day => (
+            <div key={day} className="text-[10px] text-gray-400 font-medium">{day}</div>
+          ))}
+          {days}
+        </div>
+      </div>
+    );
   };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
   return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
-      {label && (
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
-      )}
-
+    <div className={`relative ${className}`} ref={pickerRef}>
+      <label className="block text-xs font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
       <div className="relative">
-        {/* Calendar icon */}
-        <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10">
-          <FaCalendarAlt className="h-4 w-4" />
-        </div>
-
-        {/* Input */}
+        <FaCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 z-10" />
         <input
           ref={inputRef}
           type="text"
           value={inputValue}
           onChange={handleInputChange}
-          onBlur={handleBlur}
           onFocus={() => setIsOpen(true)}
+          onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
-          placeholder={getPlaceholder()}
+          placeholder={calendar === 'AD' ? 'YYYY-MM-DD (AD)' : placeholder}
+          className={`w-full pl-10 pr-16 py-2.5 rounded-lg border-2 transition-all duration-200 ${error ? 'border-red-500' : 'border-gray-200'} ${isOpen ? 'border-green-500 shadow-md ring-2 ring-green-200' : 'hover:border-gray-300'} focus:outline-none`}
           disabled={disabled}
-          className={`
-            w-full px-3 py-2.5 rounded-lg border-2 transition-all duration-200
-            pl-9 pr-20
-            ${isOpen ? 'border-green-500 shadow-md ring-2 ring-green-200' : 'border-gray-200 hover:border-gray-300'}
-            ${error || parseError ? 'border-red-500 ring-2 ring-red-200' : ''}
-            ${disabled ? 'bg-gray-50 cursor-not-allowed' : ''}
-            focus:outline-none
-          `}
         />
-
-        {/* Right side buttons */}
-        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-0.5">
-          {/* AD/BS toggle */}
-          {showAdInput && (
-            <button
-              type="button"
-              onClick={toggleInputMode}
-              className={`
-                px-1.5 py-0.5 text-[9px] font-bold rounded transition-colors
-                ${inputMode === 'AD' 
-                  ? 'bg-blue-100 text-blue-700' 
-                  : 'bg-green-100 text-green-700'}
-                hover:opacity-80
-              `}
-              title={inputMode === 'AD' ? 'Switch to Nepali date' : 'Switch to English date'}
-            >
-              {inputMode}
-            </button>
-          )}
-
-          {/* Clear */}
+        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
           {inputValue && (
-            <button
-              type="button"
-              onClick={clearValue}
-              className="p-0.5 hover:bg-gray-100 rounded-full transition-colors"
-            >
+            <button type="button" onClick={handleClear} className="p-0.5 hover:bg-gray-100 rounded-full">
               <FaTimes className="h-3 w-3 text-gray-400 hover:text-gray-600" />
             </button>
           )}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={toggleCalendar}
+            disabled={disabled}
+            title={calendar === 'BS' ? 'अंग्रेजी (AD) मिति टाइप गर्न थिच्नुहोस्' : 'नेपाली (BS) मितिमा फर्कनुहोस्'}
+            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${calendar === 'AD' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+          >
+            {calendar}
+          </button>
         </div>
       </div>
-
-      {/* Error messages */}
-      {(error || parseError) && (
-        <p className="mt-1 text-xs text-red-500">{error || parseError}</p>
-      )}
-
-      {/* Help text */}
-      {!error && !parseError && (
-        <p className="mt-0.5 text-[10px] text-gray-400">
-          {inputMode === 'AD' 
-            ? 'अंग्रेजी मिति टाइप गर्नुहोस् (स्वत: नेपालीमा रूपान्तरण हुनेछ)'
-            : 'नेपाली मिति टाइप गर्नुहोस् वा क्यालेन्डरबाट छान्नुहोस्'}
-        </p>
-      )}
-
-      {/* Calendar Dropdown */}
-      {isOpen && !disabled && (
-        <div className="absolute z-50 mt-1 bg-white rounded-lg border border-gray-200 shadow-xl overflow-hidden"
-             style={{ minWidth: '280px', maxWidth: '320px' }}>
-          
-          {/* Header */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-2 border-b border-green-100">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={goToPrevMonth}
-                className="p-1.5 hover:bg-white/80 rounded-lg transition-colors"
-              >
-                <FaChevronLeft className="h-3 w-3 text-green-600" />
-              </button>
-              
-              <div className="text-center">
-                <div className="text-sm font-semibold text-green-800">
-                  {NEPALI_MONTHS[viewMonth - 1]} {viewYear}
-                </div>
-                <div className="text-[10px] text-gray-500">
-                  {NEPALI_MONTHS_EN[viewMonth - 1]}
-                </div>
-              </div>
-              
-              <button
-                type="button"
-                onClick={goToNextMonth}
-                className="p-1.5 hover:bg-white/80 rounded-lg transition-colors"
-              >
-                <FaChevronRight className="h-3 w-3 text-green-600" />
-              </button>
-            </div>
-          </div>
-
-          {/* Day of week headers */}
-          <div className="grid grid-cols-7 gap-0.5 p-1.5 border-b border-gray-100">
-            {['आ', 'सो', 'मं', 'बु', 'बि', 'शु', 'श'].map((day, i) => (
-              <div
-                key={i}
-                className={`text-center text-[10px] font-medium py-1 ${
-                  i === 6 ? 'text-red-500' : 'text-gray-500'
-                }`}
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar days */}
-          <div className="grid grid-cols-7 gap-0.5 p-1.5 max-h-56 overflow-y-auto">
-            {calendarDays.map((day) => {
-              const isSelected =
-                bsValue &&
-                bsValue.year === viewYear &&
-                bsValue.month === viewMonth &&
-                bsValue.day === day;
-
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  onClick={() => handleDateSelect(day)}
-                  className={`
-                    aspect-square text-xs rounded-lg transition-all
-                    ${isSelected
-                      ? 'bg-green-500 text-white font-semibold shadow-md'
-                      : 'hover:bg-green-50 text-gray-700'}
-                  `}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Footer */}
-          <div className="p-1.5 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
-            <button
-              type="button"
-              onClick={() => {
-                const today = new Date();
-                const todayBs = adToBs(today);
-                if (todayBs) {
-                  setViewYear(todayBs.year);
-                  setViewMonth(todayBs.month);
-                  handleDateSelect(todayBs.day);
-                }
-              }}
-              className="text-xs text-green-600 hover:text-green-700 font-medium"
-            >
-              आज
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="text-xs text-gray-500 hover:text-gray-700"
-            >
-              बन्द गर्नुहोस्
-            </button>
-          </div>
+      {hint && <p className={`mt-1 text-[11px] ${hint.invalid ? 'text-red-500' : 'text-gray-400'}`}>{hint.text}</p>}
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {isOpen && calendar === 'BS' && (
+        <div className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-gray-200" style={popupStyle}>
+          {renderCalendar()}
         </div>
       )}
     </div>

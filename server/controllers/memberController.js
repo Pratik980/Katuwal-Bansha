@@ -1,22 +1,28 @@
-// backend/src/controllers/memberController.js - COMPLETE UPDATED FILE
-// Features:
-// - generationMode support (auto/manual)
-// - Manual vanshaj number preserved
-// - DOB conversion (English → Nepali BS storage)
-// - Spouse auto-linking (bidirectional)
-// - Missing/unknown person support
-// - Duplicate member detection
 
+import mongoose from 'mongoose';
 import Member from '../models/Member.js';
 import Family from '../models/Family.js';
-import House from '../models/House.js';
 import FamilyRelationship from '../models/FamilyRelationship.js';
 import { io } from '../server.js';
-import cloudinary from '../config/cloudinary.js';
 import Notification from '../models/Notification.js';
 import Counter from '../models/Counter.js';
+import {
+  linkSpouses,
+  addWife,
+  unlinkSpouses,
+  forgetTypedSpouseName,
+  repairSpouseLink,
+  autoLinkSpouse,
+  syncFamilyLinks,
+  resolveGeneration,
+} from '../services/relationshipService.js';
+import { parseDateInput } from '../utils/nepaliCalendar.js';
+import { escapeRegex } from '../utils/text.js';
+import { deleteAsset } from '../utils/cloudinaryAssets.js';
+import { buildMemberQuery } from '../utils/memberQuery.js';
+import { PHOTO_FIELDS, FILE_FIELDS, BS_DATE_FIELDS, RELATION_FIELDS } from '../utils/memberFields.js';
 
-// ⭐ Helper: Get sequential member number - M0001 format
+
 const getNextMemberNumber = async () => {
   const counter = await Counter.findByIdAndUpdate(
     'memberNumber',
@@ -26,7 +32,7 @@ const getNextMemberNumber = async () => {
   return `M${String(counter.seq).padStart(4, '0')}`;
 };
 
-// ⭐ Helper: Clean array fields - remove empty strings
+
 const cleanArrayFields = (body) => {
   const arrayFields = [
     'sons', 'daughters', 'elderBrothers', 'youngerBrothers',
@@ -49,7 +55,7 @@ const cleanArrayFields = (body) => {
   return cleaned;
 };
 
-// ⭐ Helper: Clean phone number
+
 const cleanPhoneNumber = (phone) => {
   if (!phone) return '';
   const cleaned = phone.replace(/\D/g, '');
@@ -59,7 +65,7 @@ const cleanPhoneNumber = (phone) => {
   return phone;
 };
 
-// ⭐ Helper: Clean family ID
+
 const cleanFamilyId = (family) => {
   if (!family) return '';
   if (Array.isArray(family)) return family[0] || '';
@@ -70,332 +76,71 @@ const cleanFamilyId = (family) => {
   return String(family);
 };
 
-// ⭐ NEW: Parse date input (supports AD and BS)
-const parseDateInput = (dateInput) => {
-  if (!dateInput) return { adDate: null, bsString: null };
 
-  // If already a Date object
-  if (dateInput instanceof Date) {
-    return { adDate: dateInput, bsString: null };
-  }
+const isTrue = (value) => value === true || value === 'true';
+const isFalse = (value) => value === false || value === 'false';
 
-  // If string in YYYY-MM-DD format
-  if (typeof dateInput === 'string') {
-    const trimmed = dateInput.trim();
-    if (!trimmed) return { adDate: null, bsString: null };
+// Fixed-list fields: an empty choice from the form means "leave as it is"
+const CHOICE_FIELDS = [
+  'gender', 'bloodGroup', 'maritalStatus', 'lineageRole', 'parentRelationshipType',
+  'generationMode', 'personStatus', 'status', 'verificationStatus',
+];
 
-    const match = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
-    if (!match) return { adDate: null, bsString: null };
 
-    const year = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10);
-    const day = parseInt(match[3], 10);
-
-    // If year is 2000-2090, treat as BS (Nepali)
-    if (year >= 2000 && year <= 2090) {
-      // Convert BS to AD
-      const adDate = bsToAd(year, month, day);
-      return { adDate, bsString: trimmed };
-    }
-
-    // Otherwise treat as AD (English)
-    if (year >= 1900 && year <= 2100) {
-      const adDate = new Date(year, month - 1, day);
-      if (!isNaN(adDate.getTime())) {
-        // Convert to BS for storage
-        const bsDate = adToBs(adDate);
-        return { adDate, bsString: bsDate?.formatted || null };
-      }
-    }
-  }
-
-  return { adDate: null, bsString: null };
+// Someone with the same name already in this family. It may be the same person
+// entered twice, or a grandson named after his grandfather: the form asks.
+const findSameName = async ({ family, name, personStatus }, excludeId = null) => {
+  if (!name || !name.trim() || personStatus === 'unknown_name') return null;
+  return Member.findOne({
+    family,
+    name: { $regex: `^${escapeRegex(name.trim())}$`, $options: 'i' },
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  });
 };
 
-// ⭐ BS to AD conversion (simplified - uses the frontend converter logic)
-const bsToAd = (bsYear, bsMonth, bsDay) => {
-  // Reference: 2000/01/01 BS = 1943/04/14 AD
-  const BS_START_YEAR = 2000;
-  const AD_START_DATE = new Date(1943, 3, 14);
-  
-  // Simplified calendar data (same as frontend)
-  const NEPALI_CALENDAR_DATA = {
-    2000: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2001: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2002: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2003: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2004: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2005: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2006: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2007: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2008: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
-    2009: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2010: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2011: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2012: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2013: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2014: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2015: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2016: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2017: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2018: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2019: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2020: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2021: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2022: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2023: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2024: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2025: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2026: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2027: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2028: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2029: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2030: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2031: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2032: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2033: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2034: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2035: [30, 32, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
-    2036: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2037: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2038: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2039: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2040: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2041: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2042: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2043: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2044: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2045: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2046: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2047: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2048: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2049: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2050: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2051: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2052: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2053: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2054: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2055: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2056: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2057: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2058: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2059: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30],
-    2060: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2061: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2062: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2063: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2064: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2065: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2066: [30, 32, 31, 32, 31, 31, 29, 30, 29, 30, 29, 31],
-    2067: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2068: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2069: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2070: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 29, 31],
-    2071: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2072: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2073: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2074: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2075: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2076: [31, 31, 32, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
-    2078: [31, 31, 31, 32, 31, 31, 29, 30, 30, 29, 30, 30],
-    2079: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2080: [31, 31, 32, 32, 31, 30, 30, 30, 29, 29, 30, 30],
-    2081: [31, 31, 32, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-    2082: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-    2083: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30],
-    2084: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30],
-    2085: [31, 32, 31, 32, 30, 31, 30, 30, 29, 30, 30, 30],
-    2086: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-    2087: [31, 31, 32, 31, 31, 31, 30, 30, 29, 30, 30, 30],
-    2088: [30, 31, 32, 32, 30, 31, 30, 30, 29, 30, 30, 30],
-    2089: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-    2090: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30],
-  };
-
-  let totalDays = 0;
-  for (let y = BS_START_YEAR; y < bsYear; y++) {
-    const yearData = NEPALI_CALENDAR_DATA[y];
-    if (yearData) {
-      totalDays += yearData.reduce((a, b) => a + b, 0);
-    }
-  }
-
-  const yearData = NEPALI_CALENDAR_DATA[bsYear];
-  if (yearData) {
-    for (let m = 1; m < bsMonth; m++) {
-      totalDays += yearData[m - 1] || 30;
-    }
-  }
-
-  totalDays += bsDay - 1;
-
-  const adDate = new Date(AD_START_DATE);
-  adDate.setDate(adDate.getDate() + totalDays);
-
-  return adDate;
+// A citizenship number belongs to one person only
+const findCitizenshipOwner = async (citizenshipNumber, excludeId = null) => {
+  if (!citizenshipNumber || !String(citizenshipNumber).trim()) return null;
+  return Member.findOne({
+    citizenshipNumber: String(citizenshipNumber).trim(),
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  });
 };
 
-// ⭐ AD to BS conversion
-const adToBs = (adDate) => {
-  if (!adDate) return null;
-  
-  const BS_START_YEAR = 2000;
-  const AD_START_DATE = new Date(1943, 3, 14);
-  
-  const NEPALI_MONTHS = [
-    'बैशाख', 'जेठ', 'असार', 'साउन', 'भदौ', 'असोज',
-    'कात्तिक', 'मंसिर', 'पुष', 'माघ', 'फाल्गुन', 'चैत'
-  ];
-
-  const NEPALI_CALENDAR_DATA = {
-    2000: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    // ... (same data)
-  };
-
-  let totalDays = Math.floor((adDate - AD_START_DATE) / (1000 * 60 * 60 * 24));
-  if (totalDays < 0) return null;
-
-  let bsYear = BS_START_YEAR;
-  let bsMonth = 1;
-  let bsDay = 1;
-
-  while (totalDays > 0) {
-    const yearData = NEPALI_CALENDAR_DATA[bsYear];
-    if (!yearData) break;
-    
-    const daysInMonth = yearData[bsMonth - 1] || 30;
-    if (totalDays >= daysInMonth) {
-      totalDays -= daysInMonth;
-      bsMonth++;
-      if (bsMonth > 12) {
-        bsMonth = 1;
-        bsYear++;
-      }
-    } else {
-      bsDay += totalDays;
-      totalDays = 0;
-    }
-  }
-
-  return {
-    year: bsYear,
-    month: bsMonth,
-    day: bsDay,
-    formatted: `${bsYear}-${String(bsMonth).padStart(2, '0')}-${String(bsDay).padStart(2, '0')}`,
-    formattedNepali: `${NEPALI_MONTHS[bsMonth - 1]} ${bsDay}, ${bsYear}`,
-  };
-};
-
-// ⭐ NEW: Check for existing similar member to prevent duplicates
-const findExistingMember = async (memberData, excludeId = null) => {
-  const query = {
-    family: memberData.family,
-  };
-
-  if (excludeId) {
-    query._id = { $ne: excludeId };
-  }
-
-  const orConditions = [];
-
-  if (memberData.name && memberData.name.trim() !== '' && memberData.personStatus !== 'unknown_name') {
-    orConditions.push({
-      name: { $regex: `^${memberData.name.trim()}$`, $options: 'i' },
-      family: memberData.family
-    });
-  }
-
-  if (memberData.phone && memberData.phone.trim() !== '') {
-    orConditions.push({
-      phone: memberData.phone.trim(),
-      family: memberData.family
-    });
-  }
-
-  if (memberData.citizenshipNumber && memberData.citizenshipNumber.trim() !== '') {
-    orConditions.push({
-      citizenshipNumber: memberData.citizenshipNumber.trim()
-    });
-  }
-
-  if (orConditions.length === 0) {
-    return null;
-  }
-
-  const existingMember = await Member.findOne({
-    $or: orConditions,
-    _id: excludeId ? { $ne: excludeId } : { $ne: null }
+const possibleDuplicate = (res, existing) =>
+  res.status(409).json({
+    success: false,
+    code: 'POSSIBLE_DUPLICATE',
+    message: `यो नामको व्यक्ति यस परिवारमा पहिले नै दर्ता छ: ${existing.name} (${existing.memberNumber})।`,
+    existingMember: { _id: existing._id, name: existing.name, memberNumber: existing.memberNumber },
   });
 
-  return existingMember;
-};
-
-// ⭐ Auto-link spouse relationship bidirectionally
-const linkSpouseRelationship = async (member, spouseId) => {
-  if (!spouseId) return null;
-
-  const spouse = await Member.findById(spouseId);
-  if (!spouse) return null;
-
-  if (spouse.spouse && spouse.spouse.toString() !== member._id.toString()) {
-    console.log(`⚠️ Spouse ${spouse.name} already has a different spouse. Skipping auto-link.`);
-    return null;
-  }
-
-  spouse.spouse = member._id;
-
-  if (member.gender === 'male') {
-    spouse.husband = member._id;
-  } else if (member.gender === 'female') {
-    spouse.wife = member._id;
-  }
-
-  await spouse.save();
-  console.log(`🔗 Auto-linked spouse: ${member.name} ↔ ${spouse.name}`);
-
-  return spouse;
-};
-
-// ⭐ Auto-link spouse by relationship + vansha + family
-const autoLinkSpouseByVansha = async (member) => {
-  const isSpouseRole =
-    member.relationship === 'श्रीमती' ||
-    member.relationship === 'श्रीमान';
-
-  if (!isSpouseRole || member.spouse) return;
-
-  const candidates = await Member.find({
-    _id: { $ne: member._id },
-    family: member.family,
-    vanshaGenerationNumber: member.vanshaGenerationNumber,
-    gender: { $ne: member.gender },
-    $or: [
-      { spouse: { $exists: false } },
-      { spouse: null },
-    ],
+const citizenshipTaken = (res, existing) =>
+  res.status(409).json({
+    success: false,
+    code: 'DUPLICATE_CITIZENSHIP',
+    message: `यो नागरिकता नम्बर अर्को सदस्यको हो: ${existing.name} (${existing.memberNumber})। कृपया जाँच गर्नुहोस्।`,
+    existingMember: { _id: existing._id, name: existing.name, memberNumber: existing.memberNumber },
   });
 
-  if (candidates.length === 1) {
-    const partner = candidates[0];
 
-    await Member.findByIdAndUpdate(member._id, {
-      spouse: partner._id,
-      ...(member.gender === 'female' ? { husband: partner._id } : { wife: partner._id }),
-    });
-
-    await Member.findByIdAndUpdate(partner._id, {
-      spouse: member._id,
-      ...(member.gender === 'female' ? { wife: member._id } : { husband: member._id }),
-    });
-
-    console.log(`🔗 Auto-linked spouse by vansha: ${member.name} ↔ ${partner.name}`);
-  }
+// The other dates on the form are typed in BS like the date of birth.
+// Each is stored as the AD date plus the BS text that was typed.
+const applyBsDates = (body) => {
+  BS_DATE_FIELDS.forEach((field) => {
+    const value = body[field];
+    if (typeof value !== 'string' || !/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(value.trim())) return;
+    const parsed = parseDateInput(value);
+    if (parsed.adDate) {
+      body[field] = parsed.adDate;
+      body[`${field}Nepali`] = parsed.bsString;
+    }
+  });
 };
 
-// ⭐ Get or preserve Bansha number
+
 const getBanshaNumber = async (familyId, requestedBansha = null) => {
-  // If user provided a specific Bansha number, PRESERVE it exactly
+
   if (requestedBansha && requestedBansha.trim() !== '') {
     return requestedBansha.trim();
   }
@@ -404,51 +149,21 @@ const getBanshaNumber = async (familyId, requestedBansha = null) => {
   return family?.vanshaGenerationNumber || null;
 };
 
-// ============================================================
-// GET MEMBERS
-// ============================================================
+
 export const getMembers = async (req, res) => {
   try {
-    const {
-      page = 1, limit = 10, search, gender, status, generation,
-      verificationStatus, family, district, province, house
-    } = req.query;
+    const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    let query = {};
-
-    if (search) {
-      query = {
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { surname: { $regex: search, $options: 'i' } },
-          { memberNumber: { $regex: search, $options: 'i' } },
-          { vanshaGenerationNumber: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } },
-          { familyNumber: { $regex: search, $options: 'i' } },
-          { citizenshipNumber: { $regex: search, $options: 'i' } },
-          { houseNumber: { $regex: search, $options: 'i' } },
-        ],
-      };
-    }
-
-    if (gender) query.gender = gender;
-    if (status) query.status = status;
-    if (generation) query.generation = parseInt(generation);
-    if (verificationStatus) query.verificationStatus = verificationStatus;
-    if (family) query.family = family;
-    if (district) query.district = district;
-    if (province) query.province = province;
-
-    if (house) {
-      const familiesInHouse = await Family.find({ house }).distinct('_id');
-      query.family = { $in: familiesInHouse };
-    }
+    const query = await buildMemberQuery(req.query);
 
     const [members, total] = await Promise.all([
       Member.find(query)
-        .populate('family', 'familyName familyNumber vanshaGenerationNumber')
+        .populate({
+          path: 'family',
+          select: 'familyName familyNumber vanshaGenerationNumber house',
+          populate: { path: 'house', select: 'houseNumber' },
+        })
         .populate('father mother spouse', 'name photo memberNumber')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -471,11 +186,29 @@ export const getMembers = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET MEMBER BY ID
-// ============================================================
+
+// Just enough of every member to fill the father / mother / spouse lists of the
+// form, however many members there are.
+export const getMemberOptions = async (req, res) => {
+  try {
+    const members = await Member.find()
+      .select('name surname memberNumber gender family')
+      .sort({ name: 1 })
+      .lean();
+    res.json({ data: members });
+  } catch (error) {
+    console.error('getMemberOptions Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 export const getMemberById = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Member not found' });
+    }
+
     const member = await Member.findById(req.params.id)
       .populate('family', 'familyName familyNumber vanshaGenerationNumber clan')
       .populate(
@@ -511,15 +244,15 @@ export const getMemberById = async (req, res) => {
   }
 };
 
-// ============================================================
-// CREATE MEMBER
-// ============================================================
+
 export const createMember = async (req, res) => {
   try {
     const files = req.files || {};
     const body = { ...req.body };
+    const confirmDuplicate = isTrue(body.confirmDuplicate);
+    delete body.confirmDuplicate;
 
-    // Clean the family ID
+
     const familyId = cleanFamilyId(body.family);
     console.log('📝 Creating member with family ID:', familyId);
 
@@ -547,22 +280,22 @@ export const createMember = async (req, res) => {
 
     body.family = familyId;
 
-    // Clean phone number
+
     if (body.phone) {
       body.phone = cleanPhoneNumber(body.phone);
     }
 
-    // ⭐ Handle DOB conversion
+
     let dobAd = null;
     let dobNepali = null;
-    
+
     if (body.dob) {
       const parsed = parseDateInput(body.dob);
       dobAd = parsed.adDate;
       dobNepali = parsed.bsString;
     }
-    
-    // If dobNepali provided separately (from date picker)
+
+
     if (body.dobNepali && !dobNepali) {
       dobNepali = body.dobNepali;
       const parsed = parseDateInput(body.dobNepali);
@@ -571,110 +304,92 @@ export const createMember = async (req, res) => {
       }
     }
 
-    // ⭐ DUPLICATE SPOUSE CHECK
-    if (body.spouse) {
-      const spouseId = body.spouse;
-      const existingSpouse = await Member.findOne({
-        _id: spouseId,
-        spouse: { $exists: true, $ne: null }
-      });
 
-      if (existingSpouse && String(existingSpouse.spouse) !== String(body._id)) {
-        return res.status(400).json({
-          success: false,
-          message: 'This person is already married to someone else. Remove existing spouse first.'
-        });
+    // A woman may be added as another wife of a man who is already married.
+    // Any other choice of an already married person is refused.
+    let joinsAsAnotherWife = false;
+    if (body.spouse) {
+      const chosen = await Member.findById(body.spouse).select('spouse gender');
+      if (chosen?.spouse) {
+        joinsAsAnotherWife = body.gender === 'female' && chosen.gender === 'male';
+        if (!joinsAsAnotherWife) {
+          return res.status(400).json({
+            success: false,
+            message: 'This person is already married to someone else. Remove existing spouse first.'
+          });
+        }
       }
     }
 
-    // Clean array fields
-    const cleanedBody = cleanArrayFields(body);
 
-    // ⭐ DUPLICATE PREVENTION
-    const existingMember = await findExistingMember({
-      family: familyId,
-      name: cleanedBody.name,
-      phone: cleanedBody.phone,
-      citizenshipNumber: cleanedBody.citizenshipNumber,
-      personStatus: cleanedBody.personStatus,
+    const cleanedBody = cleanArrayFields(body);
+    CHOICE_FIELDS.forEach((field) => {
+      if (cleanedBody[field] === '') delete cleanedBody[field];
     });
 
-    if (existingMember) {
-      console.log('⚠️ Potential duplicate member found:', existingMember.name);
-      return res.status(409).json({
-        success: false,
-        message: `यो व्यक्ति पहिले नै यस परिवारमा दर्ता भइसकेको छ: ${existingMember.name} (${existingMember.memberNumber})। कृपया जाँच गर्नुहोस्।`,
-        existingMember: {
-          _id: existingMember._id,
-          name: existingMember.name,
-          memberNumber: existingMember.memberNumber,
-        },
-      });
+
+    const citizenshipOwner = await findCitizenshipOwner(cleanedBody.citizenshipNumber);
+    if (citizenshipOwner) {
+      return citizenshipTaken(res, citizenshipOwner);
     }
 
-    // ⭐ Get Bansha number (PRESERVE manual entry)
+    if (!confirmDuplicate) {
+      const sameName = await findSameName({
+        family: familyId,
+        name: cleanedBody.name,
+        personStatus: cleanedBody.personStatus,
+      });
+      if (sameName) {
+        console.log('⚠️ Potential duplicate member found:', sameName.name);
+        return possibleDuplicate(res, sameName);
+      }
+    }
+
+
     const vanshaNumber = await getBanshaNumber(familyId, cleanedBody.vanshaGenerationNumber);
 
-    // ⭐ Generate member number
-    const memberNumber = await getNextMemberNumber();
 
-    // ⭐ Handle missing/unknown person
     const personStatus = cleanedBody.personStatus || 'known';
     let memberName = cleanedBody.name;
-    let memberDob = dobAd;
-    let memberDobNepali = dobNepali;
 
     if (personStatus === 'unknown_name') {
       memberName = memberName || 'नाम अज्ञात';
-      if (!memberDob) {
-        memberDob = new Date(); // Placeholder
-      }
     }
 
-    // ⭐ Handle generation mode
+
     const generationMode = cleanedBody.generationMode || 'auto';
-    let generation = cleanedBody.generation;
+    const generation = await resolveGeneration({
+      mode: generationMode,
+      submitted: cleanedBody.generation,
+      father: cleanedBody.father,
+      mother: cleanedBody.mother,
+      spouse: cleanedBody.spouse,
+    });
 
-    // If auto mode and no generation provided, try to calculate
-    if (generationMode === 'auto' && !generation) {
-      // Try to calculate from father/mother
-      if (cleanedBody.father) {
-        const father = await Member.findById(cleanedBody.father);
-        if (father) {
-          generation = (father.generation || 1) + 1;
-        }
-      } else if (cleanedBody.mother) {
-        const mother = await Member.findById(cleanedBody.mother);
-        if (mother) {
-          generation = (mother.generation || 1) + 1;
-        }
-      } else {
-        generation = 1;
-      }
-    }
+    applyBsDates(cleanedBody);
 
     const memberData = {
       ...cleanedBody,
       name: memberName,
-      dob: memberDob,
-      dobNepali: memberDobNepali,
-      memberNumber,
+      dob: dobAd,
+      dobNepali,
       vanshaGenerationNumber: vanshaNumber,
-      generation: generation || 1,
+      generation,
       generationMode,
       family: familyId,
-      status: 'active',
+      status: isFalse(cleanedBody.isAlive) ? 'deceased' : 'active',
       verificationStatus: 'pending',
       personStatus,
-      photo: files.photo?.[0]?.path || null,
-      citizenshipFront: files.citizenshipFront?.[0]?.path || null,
-      citizenshipBack: files.citizenshipBack?.[0]?.path || null,
-      nationalIdFront: files.nationalIdFront?.[0]?.path || null,
-      passportPhoto: files.passportPhoto?.[0]?.path || null,
-      drivingLicensePhoto: files.drivingLicensePhoto?.[0]?.path || null,
       createdBy: req.user?._id || null,
       updatedBy: req.user?._id || null,
     };
+
+    PHOTO_FIELDS.forEach((field) => {
+      memberData[field] = files[field]?.[0]?.path || null;
+    });
+    FILE_FIELDS.filter((field) => !PHOTO_FIELDS.includes(field)).forEach((field) => {
+      if (files[field]?.[0]?.path) memberData[field] = files[field][0].path;
+    });
 
     Object.keys(memberData).forEach(key => {
       if (memberData[key] === undefined) {
@@ -682,20 +397,30 @@ export const createMember = async (req, res) => {
       }
     });
 
+    // The member number is only taken once the record is known to be valid
     const member = new Member(memberData);
+    await member.validate();
+    member.memberNumber = await getNextMemberNumber();
     await member.save();
 
-    // ⭐ AUTO-LINK SPOUSE
-    if (cleanedBody.spouse && cleanedBody.maritalStatus === 'married') {
-      await linkSpouseRelationship(member, cleanedBody.spouse);
+    // Relationships: link the chosen spouse, or find the one already in this family
+    if (cleanedBody.spouse) {
+      if (joinsAsAnotherWife) {
+        await addWife(cleanedBody.spouse, member._id);
+      } else {
+        await linkSpouses(member._id, cleanedBody.spouse);
+      }
+    } else {
+      await autoLinkSpouse(member._id);
     }
+    await syncFamilyLinks(member);
 
-    // Update family total members count
+
     await Family.findByIdAndUpdate(familyId, {
       $inc: { totalMembers: 1 },
     });
 
-    // ⭐ Recalculate family generations
+
     if (family.recalculateGenerations) {
       await family.recalculateGenerations();
     }
@@ -703,9 +428,6 @@ export const createMember = async (req, res) => {
     const populatedMember = await Member.findById(member._id)
       .populate('family', 'familyName familyNumber vanshaGenerationNumber')
       .populate('spouse', 'name memberNumber');
-
-    await autoLinkSpouseByVansha(member);
-    await synchronizeRelationships(member);
 
     const notification = new Notification({
       type: 'member_added',
@@ -730,19 +452,23 @@ export const createMember = async (req, res) => {
   }
 };
 
-// ============================================================
-// UPDATE MEMBER
-// ============================================================
+
 export const updateMember = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Member not found' });
+    }
+
     const member = await Member.findById(req.params.id);
     if (!member) {
       return res.status(404).json({ message: 'Member not found' });
     }
 
     const body = { ...req.body };
+    const confirmDuplicate = isTrue(body.confirmDuplicate);
+    delete body.confirmDuplicate;
 
-    // Clean the family ID if provided
+
     if (body.family) {
       const familyId = cleanFamilyId(body.family);
       if (familyId) {
@@ -761,6 +487,8 @@ export const updateMember = async (req, res) => {
         }
         body.family = familyId;
       }
+    } else {
+      delete body.family;
     }
 
     const currentFamily = await Family.findById(member.family);
@@ -777,7 +505,7 @@ export const updateMember = async (req, res) => {
       body.phone = cleanPhoneNumber(body.phone);
     }
 
-    // ⭐ Handle DOB conversion on update
+
     if (body.dob) {
       const parsed = parseDateInput(body.dob);
       if (parsed.adDate) {
@@ -786,61 +514,126 @@ export const updateMember = async (req, res) => {
       }
     }
 
-    // ⭐ DUPLICATE SPOUSE CHECK
-    if (body.spouse && String(body.spouse) !== String(member.spouse)) {
-      const spouseId = body.spouse;
-      const existingSpouse = await Member.findOne({
-        _id: spouseId,
-        spouse: { $exists: true, $ne: null }
-      });
+    // ---- What the form emptied: an empty value means "remove this" ----
+    const unset = {};
 
-      if (existingSpouse && String(existingSpouse.spouse) !== String(member._id)) {
-        return res.status(400).json({
-          success: false,
-          message: 'This person is already married to someone else. Remove existing spouse first.'
-        });
+    RELATION_FIELDS.forEach((field) => {
+      if (body[field] === '') {
+        unset[field] = 1;
+        delete body[field];
+      }
+    });
+    if (unset.spouse) {
+      unset.husband = 1;
+      unset.wife = 1;
+      delete body.husband;
+      delete body.wife;
+    }
+
+    BS_DATE_FIELDS.forEach((field) => {
+      if (body[field] === '') {
+        unset[field] = 1;
+        unset[`${field}Nepali`] = 1;
+        delete body[field];
+        delete body[`${field}Nepali`];
+      }
+    });
+
+    if (body.childBirthOrder === '') {
+      unset.childBirthOrder = 1;
+      delete body.childBirthOrder;
+    }
+
+    // A date of birth can only be removed from a person whose name is unknown
+    if (body.dob === '') {
+      delete body.dob;
+      if ((body.personStatus || member.personStatus) === 'unknown_name') {
+        unset.dob = 1;
+        unset.dobNepali = 1;
+        delete body.dobNepali;
+      }
+    }
+
+    CHOICE_FIELDS.forEach((field) => {
+      if (body[field] === '') delete body[field];
+    });
+    if (body.generation === '') delete body.generation;
+
+    // A removed photo or document
+    const removedFiles = FILE_FIELDS.filter((field) => body[field] === '' && !files[field]?.[0]?.path);
+    removedFiles.forEach((field) => {
+      unset[field] = 1;
+    });
+
+    // ---- Spouse ----
+    const previousSpouseId = member.spouse ? String(member.spouse) : null;
+    const newSpouseId = body.spouse ? String(body.spouse) : null;
+    const spouseChanged = !!newSpouseId && newSpouseId !== previousSpouseId;
+
+    let joinsAsAnotherWife = false;
+    if (spouseChanged) {
+      const chosen = await Member.findById(newSpouseId).select('spouse gender');
+      if (chosen?.spouse && String(chosen.spouse) !== String(member._id)) {
+        joinsAsAnotherWife = (body.gender || member.gender) === 'female' && chosen.gender === 'male';
+        if (!joinsAsAnotherWife) {
+          return res.status(400).json({
+            success: false,
+            message: 'This person is already married to someone else. Remove existing spouse first.'
+          });
+        }
       }
     }
 
     const cleanedBody = cleanArrayFields(body);
 
-    // ⭐ Check for duplicate if name/phone changed
-    if (cleanedBody.name || cleanedBody.phone) {
-      const existingMember = await findExistingMember({
-        family: body.family || member.family,
-        name: cleanedBody.name || member.name,
-        phone: cleanedBody.phone || member.phone,
-        citizenshipNumber: cleanedBody.citizenshipNumber || member.citizenshipNumber,
+
+    // ---- Duplicates: only what this edit actually changed ----
+    const newCitizenship = String(cleanedBody.citizenshipNumber || '').trim();
+    if (newCitizenship && newCitizenship !== String(member.citizenshipNumber || '').trim()) {
+      const citizenshipOwner = await findCitizenshipOwner(newCitizenship, member._id);
+      if (citizenshipOwner) {
+        return citizenshipTaken(res, citizenshipOwner);
+      }
+    }
+
+    const newName = String(cleanedBody.name || '').trim();
+    const nameOrFamilyChanged =
+      (newName && newName.toLowerCase() !== String(member.name || '').trim().toLowerCase()) ||
+      (cleanedBody.family && String(cleanedBody.family) !== String(member.family));
+    if (nameOrFamilyChanged && !confirmDuplicate) {
+      const sameName = await findSameName({
+        family: cleanedBody.family || member.family,
+        name: newName || member.name,
         personStatus: cleanedBody.personStatus || member.personStatus,
       }, member._id);
-
-      if (existingMember) {
-        return res.status(409).json({
-          success: false,
-          message: `यो जानकारी अर्को सदस्यसँग मिल्छ: ${existingMember.name} (${existingMember.memberNumber})। कृपया जाँच गर्नुहोस्।`,
-        });
+      if (sameName) {
+        return possibleDuplicate(res, sameName);
       }
     }
 
-    // Delete old Cloudinary images
-    const photoFields = ['photo', 'citizenshipFront', 'citizenshipBack', 'nationalIdFront', 'passportPhoto', 'drivingLicensePhoto'];
-    for (const field of photoFields) {
-      if (files[field]?.[0]?.path && member[field]) {
-        const publicId = member[field].split('/').pop().split('.')[0];
-        await cloudinary.uploader.destroy(publicId).catch(() => {});
-      }
-    }
+    applyBsDates(cleanedBody);
 
     const updateData = {
       ...cleanedBody,
-      photo: files.photo?.[0]?.path || member.photo,
-      citizenshipFront: files.citizenshipFront?.[0]?.path || member.citizenshipFront,
-      citizenshipBack: files.citizenshipBack?.[0]?.path || member.citizenshipBack,
-      nationalIdFront: files.nationalIdFront?.[0]?.path || member.nationalIdFront,
-      passportPhoto: files.passportPhoto?.[0]?.path || member.passportPhoto,
-      drivingLicensePhoto: files.drivingLicensePhoto?.[0]?.path || member.drivingLicensePhoto,
       updatedBy: req.user?._id || null,
     };
+
+    // A new file replaces the stored one; otherwise the stored link is left alone
+    const replacedFiles = [];
+    FILE_FIELDS.forEach((field) => {
+      const uploaded = files[field]?.[0]?.path;
+      if (uploaded) {
+        if (member[field]) replacedFiles.push(member[field]);
+        updateData[field] = uploaded;
+      } else {
+        delete updateData[field];
+      }
+    });
+
+    if (cleanedBody.isAlive !== undefined) {
+      if (isFalse(cleanedBody.isAlive)) updateData.status = 'deceased';
+      else if (member.status === 'deceased') updateData.status = 'active';
+    }
 
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) {
@@ -848,7 +641,22 @@ export const updateMember = async (req, res) => {
       }
     });
 
-    // Ensure array fields are properly set
+    const father = unset.father ? null : cleanedBody.father || member.father;
+    const mother = unset.mother ? null : cleanedBody.mother || member.mother;
+    const parentChanged =
+      String(father || '') !== String(member.father || '') ||
+      String(mother || '') !== String(member.mother || '');
+
+    updateData.generation = await resolveGeneration({
+      mode: cleanedBody.generationMode || member.generationMode || 'auto',
+      submitted: cleanedBody.generation,
+      current: member.generation || 1,
+      father,
+      mother,
+      parentChanged: parentChanged && !!(father || mother),
+    });
+
+
     const arrayFields = [
       'sons', 'daughters', 'elderBrothers', 'youngerBrothers',
       'elderSisters', 'youngerSisters', 'grandsons', 'granddaughters',
@@ -866,7 +674,7 @@ export const updateMember = async (req, res) => {
       }
     });
 
-    const updatedMember = await Member.findByIdAndUpdate(
+    await Member.findByIdAndUpdate(
       req.params.id,
       updateData,
       {
@@ -874,24 +682,57 @@ export const updateMember = async (req, res) => {
         runValidators: true,
         returnDocument: 'after',
       }
-    ).populate('family', 'familyName familyNumber vanshaGenerationNumber');
+    );
 
-    // ⭐ Handle spouse change
-    if (cleanedBody.spouse && cleanedBody.spouse !== member.spouse?.toString()) {
-      if (member.spouse) {
-        await Member.findByIdAndUpdate(member.spouse, {
-          $unset: { spouse: 1, husband: 1, wife: 1 }
-        });
-      }
-      await linkSpouseRelationship(updatedMember, cleanedBody.spouse);
+    if (Object.keys(unset).length > 0) {
+      await Member.updateOne({ _id: member._id }, { $unset: unset });
     }
 
-    await autoLinkSpouseByVansha(updatedMember);
-    await synchronizeRelationships(updatedMember, member);
+    // Files that are no longer used
+    await Promise.all([
+      ...replacedFiles.map((url) => deleteAsset(url)),
+      ...removedFiles.filter((field) => member[field]).map((field) => deleteAsset(member[field])),
+    ]);
 
-    // ⭐ Recalculate family generations
+
+    if (unset.spouse) {
+      if (previousSpouseId) {
+        await unlinkSpouses(member._id, previousSpouseId);
+        await forgetTypedSpouseName(member._id, previousSpouseId);
+      }
+    } else if (spouseChanged) {
+      if (previousSpouseId) {
+        await unlinkSpouses(member._id, previousSpouseId);
+      }
+      if (joinsAsAnotherWife) {
+        await addWife(newSpouseId, member._id);
+      } else {
+        await linkSpouses(member._id, newSpouseId);
+      }
+    } else if (previousSpouseId) {
+      await repairSpouseLink(member._id);
+    } else {
+      await autoLinkSpouse(member._id);
+    }
+
+    const updatedMember = await Member.findById(member._id)
+      .populate('family', 'familyName familyNumber vanshaGenerationNumber');
+
+    // `member` is the record as it was before this edit
+    await syncFamilyLinks(updatedMember, member);
+
+
     if (currentFamily && currentFamily.recalculateGenerations) {
       await currentFamily.recalculateGenerations();
+    }
+
+    // Keep each family's stored member total right when a member moves
+    const newFamilyId = String(updatedMember.family?._id || updatedMember.family || '');
+    if (newFamilyId && member.family && newFamilyId !== String(member.family)) {
+      await Promise.all([
+        Family.findByIdAndUpdate(member.family, { $inc: { totalMembers: -1 } }),
+        Family.findByIdAndUpdate(newFamilyId, { $inc: { totalMembers: 1 } }),
+      ]);
     }
 
     const notification = new Notification({
@@ -925,11 +766,43 @@ export const updateMember = async (req, res) => {
   }
 };
 
-// ============================================================
-// DELETE MEMBER
-// ============================================================
+
+// Verified / pending / rejected, set from the Members list
+export const updateVerification = async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!['verified', 'pending', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Verification status must be verified, pending or rejected' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Member not found' });
+    }
+
+    const member = await Member.findByIdAndUpdate(
+      req.params.id,
+      { verificationStatus: status, updatedBy: req.user?._id || null },
+      { new: true }
+    ).populate('family', 'familyName familyNumber vanshaGenerationNumber');
+
+    if (!member) {
+      return res.status(404).json({ message: 'Member not found' });
+    }
+
+    io.emit('member:updated', member);
+    res.json(member);
+  } catch (error) {
+    console.error('updateVerification Error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 export const deleteMember = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Member not found' });
+    }
+
     const member = await Member.findById(req.params.id);
     if (!member) {
       return res.status(404).json({ message: 'Member not found' });
@@ -942,26 +815,12 @@ export const deleteMember = async (req, res) => {
       });
     }
 
-    const photoFields = ['photo', 'citizenshipFront', 'citizenshipBack', 'nationalIdFront', 'passportPhoto', 'drivingLicensePhoto'];
-    for (const field of photoFields) {
-      if (member[field]) {
-        const publicId = member[field].split('/').pop().split('.')[0];
-        await cloudinary.uploader.destroy(publicId).catch(() => {});
-      }
-    }
-
     await removeFromRelationships(member);
 
     if (member.family) {
       await Family.findByIdAndUpdate(member.family, {
         $inc: { totalMembers: -1 },
       });
-      
-      // ⭐ Recalculate generations after deletion
-      const updatedFamily = await Family.findById(member.family);
-      if (updatedFamily && updatedFamily.recalculateGenerations) {
-        await updatedFamily.recalculateGenerations();
-      }
     }
 
     await FamilyRelationship.deleteMany({
@@ -972,6 +831,16 @@ export const deleteMember = async (req, res) => {
     });
 
     await Member.findByIdAndDelete(req.params.id);
+
+    // The member's photo and documents go with the member
+    await Promise.all(FILE_FIELDS.filter((field) => member[field]).map((field) => deleteAsset(member[field])));
+
+    if (member.family) {
+      const updatedFamily = await Family.findById(member.family);
+      if (updatedFamily && updatedFamily.recalculateGenerations) {
+        await updatedFamily.recalculateGenerations();
+      }
+    }
 
     const notification = new Notification({
       type: 'member_deleted',
@@ -992,9 +861,6 @@ export const deleteMember = async (req, res) => {
   }
 };
 
-// ============================================================
-// SEARCH MEMBERS
-// ============================================================
 export const searchMembers = async (req, res) => {
   try {
     const { query } = req.query;
@@ -1016,12 +882,14 @@ export const searchMembers = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET MEMBERS BY FAMILY
-// ============================================================
+
 export const getMembersByFamily = async (req, res) => {
   try {
     const { familyId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(familyId)) {
+      return res.status(404).json({ message: 'Family not found' });
+    }
 
     const family = await Family.findById(familyId);
     if (!family) {
@@ -1029,7 +897,7 @@ export const getMembersByFamily = async (req, res) => {
     }
 
     const members = await Member.find({ family: familyId })
-      .select('name photo gender dob dobNepali isAlive relationship generation generationMode memberNumber vanshaGenerationNumber')
+      .select('name surname photo gender dob dobNepali isAlive relationship generation generationMode memberNumber vanshaGenerationNumber lineageRole')
       .sort({ generation: 1, name: 1 });
 
     res.json({
@@ -1050,9 +918,7 @@ export const getMembersByFamily = async (req, res) => {
   }
 };
 
-// ============================================================
-// GET MEMBER STATS
-// ============================================================
+
 export const getMemberStats = async (req, res) => {
   try {
     const [total, byGender, byStatus, byGeneration, byVansha] = await Promise.all([
@@ -1095,211 +961,36 @@ export const getMemberStats = async (req, res) => {
   }
 };
 
-// ============================================================
-// SYNCHRONIZE RELATIONSHIPS (BIDIRECTIONAL)
-// ============================================================
-const synchronizeRelationships = async (member, oldMember = null) => {
-  const memberId = member._id;
-  const memberGender = member.gender;
 
-  if (oldMember) {
-    await removeFromRelationships(oldMember);
-  }
-
-  // Sync SPOUSE
-  if (member.spouse) {
-    const spouseId = member.spouse._id || member.spouse;
-    const spouse = await Member.findById(spouseId);
-
-    if (spouse) {
-      if (String(spouse.spouse) !== String(memberId)) {
-        await Member.findByIdAndUpdate(spouseId, { spouse: memberId });
-      }
-
-      if (memberGender === 'male') {
-        await Member.findByIdAndUpdate(spouseId, { husband: memberId });
-        await Member.findByIdAndUpdate(memberId, { wife: spouseId });
-      } else if (memberGender === 'female') {
-        await Member.findByIdAndUpdate(spouseId, { wife: memberId });
-        await Member.findByIdAndUpdate(memberId, { husband: spouseId });
-      }
-    }
-  }
-
-  // Sync HUSBAND
-  if (member.husband) {
-    const husbandId = member.husband._id || member.husband;
-    const husband = await Member.findById(husbandId);
-    if (husband) {
-      await Member.findByIdAndUpdate(husbandId, { wife: memberId });
-      if (!husband.spouse) {
-        await Member.findByIdAndUpdate(husbandId, { spouse: memberId });
-      }
-      if (!member.spouse) {
-        await Member.findByIdAndUpdate(memberId, { spouse: husbandId });
-      }
-    }
-  }
-
-  // Sync WIFE
-  if (member.wife) {
-    const wifeId = member.wife._id || member.wife;
-    const wife = await Member.findById(wifeId);
-    if (wife) {
-      await Member.findByIdAndUpdate(wifeId, { husband: memberId });
-      if (!wife.spouse) {
-        await Member.findByIdAndUpdate(wifeId, { spouse: memberId });
-      }
-      if (!member.spouse) {
-        await Member.findByIdAndUpdate(memberId, { spouse: wifeId });
-      }
-    }
-  }
-
-  // Sync FATHER
-  if (member.father) {
-    const fatherId = member.father._id || member.father;
-    const father = await Member.findById(fatherId);
-    if (father) {
-      const childField = memberGender === 'male' ? 'sons' : 'daughters';
-      if (!father[childField].map(String).includes(String(memberId))) {
-        await Member.findByIdAndUpdate(fatherId, {
-          $addToSet: { [childField]: memberId }
-        });
-      }
-    }
-  }
-
-  // Sync MOTHER
-  if (member.mother) {
-    const motherId = member.mother._id || member.mother;
-    const mother = await Member.findById(motherId);
-    if (mother) {
-      const childField = memberGender === 'male' ? 'sons' : 'daughters';
-      if (!mother[childField].map(String).includes(String(memberId))) {
-        await Member.findByIdAndUpdate(motherId, {
-          $addToSet: { [childField]: memberId }
-        });
-      }
-    }
-  }
-
-  // Sync CHILDREN
-  const childFields = [
-    { field: 'sons', gender: 'male' },
-    { field: 'daughters', gender: 'female' },
-  ];
-
-  for (const { field } of childFields) {
-    if (member[field] && member[field].length > 0) {
-      for (const childId of member[field]) {
-        const child = await Member.findById(childId);
-        if (!child) continue;
-
-        if (memberGender === 'male') {
-          if (String(child.father) !== String(memberId)) {
-            await Member.findByIdAndUpdate(childId, { father: memberId });
-          }
-        } else if (memberGender === 'female') {
-          if (String(child.mother) !== String(memberId)) {
-            await Member.findByIdAndUpdate(childId, { mother: memberId });
-          }
-        }
-      }
-    }
-  }
-
-  // Sync GRANDPARENTS
-  if (member.grandfather) {
-    const gfId = member.grandfather._id || member.grandfather;
-    const childField = memberGender === 'male' ? 'grandsons' : 'granddaughters';
-    await Member.findByIdAndUpdate(gfId, {
-      $addToSet: { [childField]: memberId }
-    });
-  }
-
-  if (member.grandmother) {
-    const gmId = member.grandmother._id || member.grandmother;
-    const childField = memberGender === 'male' ? 'grandsons' : 'granddaughters';
-    await Member.findByIdAndUpdate(gmId, {
-      $addToSet: { [childField]: memberId }
-    });
-  }
-};
-
-// ============================================================
-// REMOVE FROM RELATIONSHIPS
-// ============================================================
+// Before a member is deleted: every record that points to them lets go.
+// Only records that really point to this member are touched.
 const removeFromRelationships = async (member) => {
   const memberId = member._id;
 
-  if (member.father) {
-    const fatherId = member.father._id || member.father;
-    await Member.findByIdAndUpdate(fatherId, {
-      $pull: { sons: memberId, daughters: memberId }
-    });
-  }
-
-  if (member.mother) {
-    const motherId = member.mother._id || member.mother;
-    await Member.findByIdAndUpdate(motherId, {
-      $pull: { sons: memberId, daughters: memberId }
-    });
-  }
-
-  if (member.spouse) {
-    const spouseId = member.spouse._id || member.spouse;
-    await Member.findByIdAndUpdate(spouseId, {
-      $unset: { spouse: 1 }
-    });
-  }
-
-  if (member.husband) {
-    const husbandId = member.husband._id || member.husband;
-    await Member.findByIdAndUpdate(husbandId, {
-      $unset: { wife: 1, spouse: 1 }
-    });
-  }
-
-  if (member.wife) {
-    const wifeId = member.wife._id || member.wife;
-    await Member.findByIdAndUpdate(wifeId, {
-      $unset: { husband: 1, spouse: 1 }
-    });
-  }
-
-  if (member.grandfather) {
-    const gfId = member.grandfather._id || member.grandfather;
-    await Member.findByIdAndUpdate(gfId, {
-      $pull: { grandsons: memberId, granddaughters: memberId }
-    });
-  }
-
-  if (member.grandmother) {
-    const gmId = member.grandmother._id || member.grandmother;
-    await Member.findByIdAndUpdate(gmId, {
-      $pull: { grandsons: memberId, granddaughters: memberId }
-    });
-  }
-
-  await Member.updateMany(
-    { father: memberId },
-    { $unset: { father: 1 } }
-  );
-  await Member.updateMany(
-    { mother: memberId },
-    { $unset: { mother: 1 } }
-  );
+  await Promise.all([
+    Member.updateMany(
+      { $or: [{ sons: memberId }, { daughters: memberId }] },
+      { $pull: { sons: memberId, daughters: memberId } }
+    ),
+    Member.updateMany(
+      { $or: [{ grandsons: memberId }, { granddaughters: memberId }] },
+      { $pull: { grandsons: memberId, granddaughters: memberId } }
+    ),
+    Member.updateMany({ wives: memberId }, { $pull: { wives: memberId } }),
+    ...['spouse', 'husband', 'wife', 'father', 'mother', 'grandfather', 'grandmother', 'guardian'].map((field) =>
+      Member.updateMany({ [field]: memberId }, { $unset: { [field]: 1 } })
+    ),
+  ]);
 };
 
-// ============================================================
-// EXPORTS
-// ============================================================
+
 export default {
   getMembers,
+  getMemberOptions,
   getMemberById,
   createMember,
   updateMember,
+  updateVerification,
   deleteMember,
   searchMembers,
   getMembersByFamily,

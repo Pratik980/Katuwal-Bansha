@@ -3,6 +3,7 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import dotenv from 'dotenv';
+import { FILE_FIELDS } from '../utils/memberFields.js';
 
 dotenv.config();
 
@@ -86,16 +87,32 @@ export const uploadLogo = multer({
   fileFilter,
 });
 
+// Everything the member form can attach. The portrait is kept small; ID cards and
+// certificates keep enough detail for their text to stay readable.
+const memberFileStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: (req, file) =>
+    file.fieldname === 'photo'
+      ? {
+          folder: 'family-members',
+          allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+          transformation: [{ width: 500, height: 500, crop: 'limit' }],
+        }
+      : {
+          folder: 'documents',
+          allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+          transformation: [{ width: 1600, height: 1600, crop: 'limit' }],
+        },
+});
+
+export const uploadMemberFiles = multer({
+  storage: memberFileStorage,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+  fileFilter,
+}).fields(FILE_FIELDS.map((name) => ({ name, maxCount: 1 })));
+
 // Single file uploads
-// export const uploadSinglePhoto = uploadPhoto.single('photo');
-export const uploadSinglePhoto = uploadPhoto.fields([
-  { name: "photo", maxCount: 1 },
-  { name: "citizenshipFront", maxCount: 1 },
-  { name: "citizenshipBack", maxCount: 1 },
-  { name: "nationalIdFront", maxCount: 1 },
-  { name: "passportPhoto", maxCount: 1 },
-  { name: "drivingLicensePhoto", maxCount: 1 },
-]);
+export const uploadSinglePhoto = uploadMemberFiles;
 export const uploadSingleDocument = uploadDocument.single('file');
 export const uploadSingleFamilyPhoto = uploadFamilyPhoto.single('familyPhoto');
 export const uploadSingleLogo = uploadLogo.single('logo');

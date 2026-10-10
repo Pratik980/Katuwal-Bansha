@@ -1,16 +1,6 @@
-// src/pages/FamilyTreePage.jsx - COMPLETE UPDATED VERSION
-// Key changes:
-// - Spouse deduplication (couple shown only once)
-// - Children branch originates from husband/lineage side
-// - Print only the tree (no UI elements)
-// - Real database-driven tree (no hardcoded data)
-// - Proper visited set to prevent infinite loops
-
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getFamilies, getFamilyTreeByFamily } from '../api/families';
-import { getMembers } from '../api/members';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FaSearch, FaTree, FaHome, FaFileExcel, FaFilePdf,
@@ -19,11 +9,133 @@ import {
 } from 'react-icons/fa';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import * as XLSX from 'xlsx';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
+import TreeChart from '../components/tree/TreeChart';
+import MemberProfileModal from '../components/tree/MemberProfileModal';
+import { collectParentIds } from '../utils/treeLayout';
+import { getSpouseLabel } from '../utils/treeLabels';
 import toast from 'react-hot-toast';
+
+const CARD_WIDTH = 192; // w-48
+const MAX_CANVAS_SIDE = 16000;
+
+// Without photos the tree is drawn like a page of the printed vanshawali:
+// names only, arrows down to the children, the generation number beside each row.
+const BOOK = { cardWidth: 92, linkWidth: 14, siblingGap: 10, rootGap: 40 };
+
+const toNepaliDigits = (value) => String(value).replace(/[0-9]/g, (digit) => '०१२३४५६७८९'[digit]);
+
+// The generation number of a row: the one most of its people carry
+const generationOfRow = (row) => {
+  const counts = {};
+  row.forEach((box) => {
+    const generation = box.node.generation;
+    if (generation) counts[generation] = (counts[generation] || 0) + 1;
+  });
+  const [generation] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || [];
+  return generation ? toNepaliDigits(generation) : '';
+};
+
+const BookName = ({ member, isSpouse, onClick }) => {
+  const isPlaceholder = member.isPlaceholder === true;
+  return (
+    <div
+      role={isPlaceholder ? undefined : 'button'}
+      onClick={isPlaceholder ? undefined : onClick}
+      title={member.memberNumber ? `${member.name} (${member.memberNumber})` : member.name}
+      className={`
+        book-name w-full px-0.5 text-center text-[13px] leading-5 break-words
+        ${isSpouse ? 'text-gray-600' : 'font-semibold text-gray-900'}
+        ${isPlaceholder ? 'italic cursor-default' : 'cursor-pointer hover:underline'}
+      `}
+    >
+      {member.name || 'नाम अज्ञात'}
+    </div>
+  );
+};
+
+const TreeMemberCard = ({ member, isSpouse, showPhotos, onClick }) => {
+  const [photoFailed, setPhotoFailed] = useState(false);
+
+  const isDeceased = member.isAlive === false;
+  const isPlaceholder = member.isPlaceholder === true;
+  const genderIcon = member.gender === 'male' ? '👨' : member.gender === 'female' ? '👩' : '👤';
+  const relationship = member.lineageRole === 'lineage_head' ? 'घरमुली' : member.relationship || 'सदस्य';
+  const spouseLabel = getSpouseLabel(member);
+
+  return (
+    <div
+      className={`
+        h-full bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300
+        border-2 ${isDeceased ? 'border-gray-300' : isSpouse ? 'border-pink-300' : 'border-green-300'}
+        ${isPlaceholder ? 'border-dashed cursor-default' : 'cursor-pointer'} w-48 hover:border-green-400
+        ${isSpouse ? 'bg-pink-50/80' : ''}
+      `}
+      onClick={isPlaceholder ? undefined : onClick}
+    >
+      <div className="p-2.5">
+        {/* Photo & Info */}
+        <div className="flex items-start gap-2">
+          <div className="flex-shrink-0">
+            <div className={`
+              w-12 h-12 rounded-full overflow-hidden border-2
+              ${isDeceased ? 'border-gray-300' : isSpouse ? 'border-pink-300' : 'border-green-200'}
+              bg-gray-100
+            `}>
+              {showPhotos && member.photo && !photoFailed ? (
+                <img
+                  src={member.photo}
+                  alt={member.name}
+                  className="w-full h-full object-cover"
+                  onError={() => setPhotoFailed(true)}
+                />
+              ) : (
+                <div className={`
+                  w-full h-full flex items-center justify-center text-xl
+                  ${isDeceased ? 'bg-gray-200' : isSpouse ? 'bg-pink-100' : 'bg-gradient-to-br from-green-100 to-emerald-100'}
+                `}>
+                  {genderIcon}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1 flex-wrap">
+              {(!isSpouse || relationship !== 'सदस्य') && (
+                <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full truncate max-w-[60px]">
+                  {relationship}
+                </span>
+              )}
+              {isSpouse && relationship !== spouseLabel && (
+                <span className="text-[9px] bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded-full">
+                  {spouseLabel}
+                </span>
+              )}
+              {isDeceased && <span className="text-[9px] text-red-500">✝</span>}
+            </div>
+            <p className="font-semibold text-xs text-gray-800 truncate mt-0.5" title={member.name}>
+              {member.name || 'नाम अज्ञात'}
+            </p>
+            {member.vanshaGenerationNumber && (
+              <p className="text-[9px] text-gray-500">वंशज: {member.vanshaGenerationNumber}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Generation */}
+        {member.generation && (
+          <div className="mt-1.5 pt-1.5 border-t border-gray-100 text-[9px] text-gray-500">
+            पुस्ता: {member.generation}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const FamilyTreePage = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,25 +144,14 @@ const FamilyTreePage = () => {
   const [exporting, setExporting] = useState(false);
   const [showPhotos, setShowPhotos] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [expandedNodes, setExpandedNodes] = useState(new Set());
-  const [showAncestors, setShowAncestors] = useState(true);
+  const [collapsedNodes, setCollapsedNodes] = useState(new Set());
+  const [profileMemberId, setProfileMemberId] = useState(null);
 
   const treeRef = useRef(null);
-  const containerRef = useRef(null);
-  const printRef = useRef(null);
-  const navigate = useNavigate();
 
-  // ============================================================
-  // FETCH DATA
-  // ============================================================
   const { data: familiesData, isLoading: familiesLoading } = useQuery({
     queryKey: ['families'],
     queryFn: () => getFamilies({ limit: 1000 }),
-  });
-
-  const { data: membersData, isLoading: membersLoading } = useQuery({
-    queryKey: ['members-tree'],
-    queryFn: () => getMembers({ limit: 10000 }),
   });
 
   const { data: treeData, isLoading: treeLoading } = useQuery({
@@ -59,9 +160,6 @@ const FamilyTreePage = () => {
     enabled: !!selectedFamily,
   });
 
-  // ============================================================
-  // FILTER FAMILIES
-  // ============================================================
   const filteredFamilies = useMemo(() => {
     if (!familiesData?.data) return [];
     if (!searchTerm) return familiesData.data;
@@ -75,32 +173,28 @@ const FamilyTreePage = () => {
     );
   }, [familiesData, searchTerm]);
 
-  const getFamilyMemberCount = (familyId) => {
-    if (!membersData?.data) return 0;
-    return membersData.data.filter(m => m.family?._id === familyId || m.family === familyId).length;
-  };
+  const getFamilyMemberCount = (familyId) =>
+    familiesData?.data?.find(family => family._id === familyId)?.memberCount ?? 0;
 
-  // ============================================================
-  // HANDLERS
-  // ============================================================
   const handleFamilyClick = (family) => {
     setSelectedFamily(family);
-    setExpandedNodes(new Set());
+    setCollapsedNodes(new Set());
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedFamily(null);
+    setProfileMemberId(null);
   };
 
   const handleMemberClick = (member) => {
-    navigate(`/profile/${member._id}`);
+    if (member.isPlaceholder) return;
+    setProfileMemberId(member._id);
   };
 
-  const toggleNode = (nodeId, e) => {
-    if (e) e.stopPropagation();
-    setExpandedNodes(prev => {
+  const toggleNode = (nodeId) => {
+    setCollapsedNodes(prev => {
       const newSet = new Set(prev);
       if (newSet.has(nodeId)) newSet.delete(nodeId);
       else newSet.add(nodeId);
@@ -109,18 +203,10 @@ const FamilyTreePage = () => {
   };
 
   const toggleAllNodes = () => {
-    if (expandedNodes.size > 0) {
-      setExpandedNodes(new Set());
+    if (collapsedNodes.size > 0) {
+      setCollapsedNodes(new Set());
     } else {
-      const allIds = new Set();
-      const collectIds = (nodes) => {
-        nodes.forEach(node => {
-          allIds.add(node._id);
-          if (node.children) collectIds(node.children);
-        });
-      };
-      if (treeData?.data) collectIds(treeData.data);
-      setExpandedNodes(allIds);
+      setCollapsedNodes(new Set(collectParentIds(treeData?.data)));
     }
   };
 
@@ -128,9 +214,6 @@ const FamilyTreePage = () => {
   const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
   const handleResetZoom = () => setZoomLevel(1);
 
-  // ============================================================
-  // EXPORT FUNCTIONS
-  // ============================================================
   const exportToExcel = () => {
     if (!treeData?.data) {
       toast.error('कुनै डाटा छैन');
@@ -139,20 +222,25 @@ const FamilyTreePage = () => {
 
     setExporting(true);
     try {
+      const toRow = (person, level, parent, spouseOf = '') => ({
+        'पुस्ता': person.generation || level + 1,
+        'नाम': person.name || '',
+        'सम्बन्ध': person.relationship || (spouseOf ? getSpouseLabel(person) : 'सदस्य'),
+        'श्रीमान/श्रीमती': spouseOf,
+        'वंशज नं.': person.vanshaGenerationNumber || '',
+        'परिवार नं.': person.familyNumber || selectedFamily?.familyNumber || '',
+        'जन्म मिति': person.dobNepali || (person.dob ? new Date(person.dob).toLocaleDateString('ne-NP') : ''),
+        'जीवित': person.isAlive !== false ? 'हो' : 'होइन',
+        'लिङ्ग': person.gender === 'male' ? 'पुरुष' : person.gender === 'female' ? 'महिला' : 'अन्य',
+        'पूर्वज': parent || '',
+      });
+
       const flattenTree = (nodes, level = 0, parent = '') => {
         let result = [];
         nodes.forEach(node => {
-          result.push({
-            'पुस्ता': level,
-            'नाम': node.name || '',
-            'सम्बन्ध': node.relationship || 'सदस्य',
-            'वंशज नं.': node.vanshaGenerationNumber || '',
-            'परिवार नं.': node.familyNumber || '',
-            'जन्म मिति': node.dob ? new Date(node.dob).toLocaleDateString('ne-NP') : '',
-            'जीवित': node.isAlive ? 'हो' : 'होइन',
-            'लिङ्ग': node.gender === 'male' ? 'पुरुष' : node.gender === 'female' ? 'महिला' : 'अन्य',
-            'पूर्वज': parent || '',
-          });
+          const spouses = node.spouses || [];
+          result.push(toRow(node, level, parent, spouses.map(s => s.name).join(', ')));
+          spouses.forEach(spouse => result.push(toRow(spouse, level, '', node.name)));
           if (node.children && node.children.length > 0) {
             result = result.concat(flattenTree(node.children, level + 1, node.name));
           }
@@ -174,6 +262,27 @@ const FamilyTreePage = () => {
     }
   };
 
+  const captureTree = async () => {
+    const stage = document.createElement('div');
+    stage.style.cssText = 'position:fixed;left:-100000px;top:0;padding:24px;background:#ffffff;';
+    const copy = treeRef.current.cloneNode(true);
+    copy.querySelectorAll('[data-tree-control]').forEach((control) => control.remove());
+    stage.appendChild(copy);
+    document.body.appendChild(stage);
+
+    try {
+      const longestSide = Math.max(stage.offsetWidth, stage.offsetHeight, 1);
+      return await html2canvas(stage, {
+        scale: Math.min(2, MAX_CANVAS_SIDE / longestSide),
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      });
+    } finally {
+      stage.remove();
+    }
+  };
+
   const exportToPDF = async () => {
     if (!treeRef.current) {
       toast.error('Tree not ready');
@@ -181,15 +290,13 @@ const FamilyTreePage = () => {
     }
     setExporting(true);
     try {
-      const canvas = await html2canvas(treeRef.current, {
-        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-      });
-      const imgData = canvas.toDataURL('image/png');
+      const canvas = await captureTree();
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
       const pdf = new jsPDF({
         orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
         unit: 'px', format: [canvas.width, canvas.height],
       });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
       pdf.save(`Family_Tree_${selectedFamily?.familyName || 'All'}_${new Date().toISOString().split('T')[0]}.pdf`);
       toast.success('PDF export successful!');
     } catch (error) {
@@ -207,9 +314,7 @@ const FamilyTreePage = () => {
     }
     setExporting(true);
     try {
-      const canvas = await html2canvas(treeRef.current, {
-        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
-      });
+      const canvas = await captureTree();
       const link = document.createElement('a');
       link.download = `Family_Tree_${selectedFamily?.familyName || 'All'}_${new Date().toISOString().split('T')[0]}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -223,9 +328,6 @@ const FamilyTreePage = () => {
     }
   };
 
-  // ============================================================
-  // PRINT - ONLY THE TREE
-  // ============================================================
   const handlePrint = useCallback(() => {
     if (!treeRef.current) {
       toast.error('Tree not ready');
@@ -238,27 +340,35 @@ const FamilyTreePage = () => {
       return;
     }
 
-    const treeHTML = treeRef.current.outerHTML;
+    const printable = treeRef.current.cloneNode(true);
+    printable.querySelectorAll('[data-tree-control]').forEach((control) => control.remove());
     const familyName = selectedFamily?.familyName || 'Family Tree';
+
+    const appStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((node) => (node.tagName === 'LINK' ? `<link rel="stylesheet" href="${node.href}">` : node.outerHTML))
+      .join('\n');
+
+    // A3 landscape minus margins is about 1500px wide at 96dpi
+    const fitScale = Math.min(1, 1500 / Math.max(treeRef.current.offsetWidth, 1));
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <title>${familyName} - Family Tree</title>
+          ${appStyles}
           <style>
             @page { size: A3 landscape; margin: 10mm; }
             * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; background: white; }
-            .tree-print-title { text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 20px; color: #333; }
-            img { max-width: 100%; }
-            .transform { transform: none !important; }
+            body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; background: white; }
+            body, body * { visibility: visible !important; }
+            .tree-print-title { text-align: center; font-size: 20px; font-weight: bold; margin: 0 0 20px; color: #333; }
           </style>
         </head>
         <body>
           <div class="tree-print-title">${familyName}</div>
-          <div style="transform: scale(0.75); transform-origin: top center;">
-            ${treeHTML}
+          <div style="zoom: ${fitScale};">
+            ${printable.outerHTML}
           </div>
         </body>
       </html>
@@ -273,219 +383,6 @@ const FamilyTreePage = () => {
     }, 500);
   }, [selectedFamily]);
 
-  // ============================================================
-  // RENDER MEMBER CARD (compact genealogy node)
-  // ============================================================
-  const renderMemberCard = (member, isSpouse = false) => {
-    if (!member) return null;
-
-    const isDeceased = !member.isAlive;
-    const hasChildren = member.children && member.children.length > 0;
-    const isExpanded = expandedNodes.has(member._id);
-    const genderIcon = member.gender === 'male' ? '👨' : member.gender === 'female' ? '👩' : '👤';
-
-    return (
-      <div className="relative group" key={member._id}>
-        <div
-          className={`
-            bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300
-            border-2 ${isDeceased ? 'border-gray-300' : isSpouse ? 'border-pink-300' : 'border-green-300'}
-            cursor-pointer w-48 hover:border-green-400
-            ${isSpouse ? 'bg-pink-50/80' : ''}
-          `}
-          onClick={() => handleMemberClick(member)}
-        >
-          <div className="p-2.5">
-            {/* Photo & Info */}
-            <div className="flex items-start gap-2">
-              <div className="flex-shrink-0">
-                <div className={`
-                  w-12 h-12 rounded-full overflow-hidden border-2
-                  ${isDeceased ? 'border-gray-300' : isSpouse ? 'border-pink-300' : 'border-green-200'}
-                  bg-gray-100
-                `}>
-                  {showPhotos && member.photo ? (
-                    <img
-                      src={member.photo}
-                      alt={member.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.target.src = '/default-avatar.png'; }}
-                    />
-                  ) : (
-                    <div className={`
-                      w-full h-full flex items-center justify-center text-xl
-                      ${isDeceased ? 'bg-gray-200' : isSpouse ? 'bg-pink-100' : 'bg-gradient-to-br from-green-100 to-emerald-100'}
-                    `}>
-                      {genderIcon}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full truncate max-w-[60px]">
-                    {member.relationship || 'सदस्य'}
-                  </span>
-                  {isSpouse && (
-                    <span className="text-[9px] bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded-full">
-                      श्रीमती
-                    </span>
-                  )}
-                  {isDeceased && <span className="text-[9px] text-red-500">✝</span>}
-                </div>
-                <p className="font-semibold text-xs text-gray-800 truncate mt-0.5">
-                  {member.name}
-                </p>
-                {member.vanshaGenerationNumber && (
-                  <p className="text-[9px] text-gray-500">वंशज: {member.vanshaGenerationNumber}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Generation */}
-            {member.generation && (
-              <div className="mt-1.5 pt-1.5 border-t border-gray-100 text-[9px] text-gray-500">
-                पुस्ता: {member.generation}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Expand button */}
-        {hasChildren && (
-          <button
-            onClick={(e) => toggleNode(member._id, e)}
-            className="absolute -bottom-2.5 right-2 bg-green-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-md hover:bg-green-600 transition-colors text-xs z-10"
-          >
-            {isExpanded ? <FaMinus className="text-[8px]" /> : <FaPlus className="text-[8px]" />}
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  // ============================================================
-  // RENDER FAMILY NODE - WITH SPOUSE DEDUPLICATION & CHILDREN FROM HUSBAND
-  // ============================================================
-  const renderFamilyNode = (node, visited = new Set(), level = 0) => {
-    if (!node || !node._id) return null;
-
-    // ⭐ Prevent infinite loops
-    if (visited.has(node._id)) return null;
-    visited.add(node._id);
-
-    const hasChildren = node.children && node.children.length > 0;
-    const isExpanded = expandedNodes.has(node._id);
-
-    // ⭐ Get spouse (from node.spouse or node.spouses array)
-    let spouse = null;
-    if (node.spouse) {
-      spouse = typeof node.spouse === 'object' ? node.spouse : null;
-    } else if (node.spouses && node.spouses.length > 0) {
-      const firstSpouse = node.spouses[0];
-      spouse = typeof firstSpouse === 'object' ? firstSpouse : null;
-    }
-
-    // ⭐ Deduplicate: only render spouse if not already visited
-    if (spouse && visited.has(spouse._id)) {
-      spouse = null;
-    }
-    if (spouse) visited.add(spouse._id);
-
-    // Filter children to avoid duplicates
-    const childIds = (node.children || [])
-      .map(c => typeof c === 'object' ? c : { _id: c })
-      .filter(c => c && c._id && !visited.has(c._id));
-
-    return (
-      <div key={node._id} className="flex flex-col items-center relative">
-        {/* Husband + Wife side by side */}
-        <div className="flex items-center gap-2 relative">
-          {renderMemberCard(node, false)}
-
-          {spouse && (
-            <>
-              <div className="flex flex-col items-center px-1">
-                <div className="w-10 h-0.5 bg-pink-400"></div>
-                <span className="text-[8px] text-pink-500 mt-0.5 whitespace-nowrap">विवाह</span>
-              </div>
-              {renderMemberCard(spouse, true)}
-            </>
-          )}
-        </div>
-
-        {/* Children - branch from HUSBAND side */}
-        {hasChildren && isExpanded && childIds.length > 0 && (
-          <div className="relative mt-2">
-            {/* Vertical line from husband card */}
-            <div className="absolute top-0 left-[96px] w-0.5 h-6 bg-green-400" />
-
-            {/* Children container */}
-            <div className="relative pt-6">
-              {/* Horizontal bridge */}
-              {childIds.length > 1 && (
-                <div
-                  className="absolute top-6 h-0.5 bg-green-400"
-                  style={{
-                    left: '15%',
-                    right: childIds.length % 2 === 0 ? '15%' : '15%',
-                  }}
-                />
-              )}
-
-              <div className={`flex justify-center items-start ${
-                childIds.length <= 3 ? 'gap-6' :
-                childIds.length <= 5 ? 'gap-4' : 'gap-3'
-              }`}>
-                {childIds.map((child) => {
-                  const childNode = typeof child === 'object' && child.children !== undefined
-                    ? child
-                    : (treeData?.data && findNodeInTree(treeData.data, child._id));
-
-                  if (!childNode || visited.has(childNode._id)) return null;
-
-                  return (
-                    <div key={childNode._id} className="relative flex flex-col items-center">
-                      <div className="absolute -top-6 left-1/2 w-0.5 h-6 bg-green-400 -translate-x-1/2" />
-                      {renderFamilyNode(childNode, visited, level + 1)}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Collapsed indicator */}
-        {hasChildren && !isExpanded && (
-          <button
-            onClick={(e) => toggleNode(node._id, e)}
-            className="mt-2 text-xs text-green-500 hover:text-green-600 flex items-center gap-1 bg-green-50 px-3 py-1 rounded-full"
-          >
-            <FaPlus className="text-[8px]" />
-            {childIds.length} सन्तान
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  // Helper to find node in tree
-  const findNodeInTree = (nodes, nodeId) => {
-    for (const node of nodes) {
-      if (node._id === nodeId) return node;
-      if (node.children) {
-        const found = findNodeInTree(node.children, nodeId);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  // ============================================================
-  // FAMILY CARD
-  // ============================================================
   const FamilyCard = ({ family }) => {
     const memberCount = getFamilyMemberCount(family._id);
     const isClosed = family.status === 'closed';
@@ -493,12 +390,12 @@ const FamilyTreePage = () => {
     return (
       <motion.div
         whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(0,0,0,0.12)' }}
-        className={`bg-white rounded-2xl border ${isClosed ? 'border-gray-300' : 'border-green-200'} 
+        className={`bg-white rounded-2xl border ${isClosed ? 'border-gray-300' : 'border-green-200'}
           overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer`}
         onClick={() => handleFamilyClick(family)}
       >
         <div className="relative">
-          <div className={`h-32 ${isClosed ? 'bg-gray-300' : 'bg-gradient-to-r from-green-400 to-emerald-500'} 
+          <div className={`h-32 ${isClosed ? 'bg-gray-300' : 'bg-gradient-to-r from-green-400 to-emerald-500'}
             flex items-center justify-center`}>
             <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30">
               {family.familyPhoto ? (
@@ -556,10 +453,8 @@ const FamilyTreePage = () => {
     );
   };
 
-  // ============================================================
-  // LOADING
-  // ============================================================
-  if (familiesLoading || membersLoading) {
+
+  if (familiesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
@@ -567,12 +462,9 @@ const FamilyTreePage = () => {
     );
   }
 
-  // ============================================================
-  // MAIN RENDER
-  // ============================================================
   return (
     <div className="space-y-6">
-      {/* Header */}
+
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FaTree className="text-green-500" />
@@ -581,7 +473,7 @@ const FamilyTreePage = () => {
         <p className="text-gray-600">परिवारको वृक्ष हेर्नुहोस् र डाउनलोड गर्नुहोस्</p>
       </div>
 
-      {/* Search */}
+
       <div className="relative max-w-md">
         <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
         <input
@@ -593,7 +485,7 @@ const FamilyTreePage = () => {
         />
       </div>
 
-      {/* Family Grid */}
+
       {filteredFamilies.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
           <FaHome className="text-4xl text-gray-300 mx-auto mb-3" />
@@ -607,18 +499,17 @@ const FamilyTreePage = () => {
         </div>
       )}
 
-      {/* Tree Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={handleCloseModal}
+        onClose={profileMemberId ? () => setProfileMemberId(null) : handleCloseModal}
         title={selectedFamily?.familyName || 'पारिवारिक वृक्ष'}
         size="xl"
       >
         {selectedFamily && (
           <div className="space-y-4">
-            {/* Controls - hidden during print */}
+
             <div className="no-print flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-xl">
-              {/* Export Buttons */}
+
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={exportToExcel} disabled={exporting}>
                   <FaFileExcel className="mr-1.5 text-green-600" />
@@ -638,10 +529,10 @@ const FamilyTreePage = () => {
                 </Button>
               </div>
 
-              {/* Separator */}
+
               <div className="h-6 w-px bg-gray-300" />
 
-              {/* Photo toggle */}
+
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -649,10 +540,10 @@ const FamilyTreePage = () => {
                   onChange={(e) => setShowPhotos(e.target.checked)}
                   className="h-4 w-4 text-green-600 rounded"
                 />
-                <span className="text-xs text-gray-700">फोटो</span>
+                <span className="text-xs text-gray-700" title="टिक हटाउँदा वंशावली पुस्तकको ढाँचामा देखिन्छ">फोटो</span>
               </label>
 
-              {/* Zoom controls */}
+
               <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-1 bg-white">
                 <button onClick={handleZoomOut} className="p-1 hover:bg-gray-100 rounded">
                   <FaMinus className="h-3 w-3 text-gray-600" />
@@ -668,59 +559,82 @@ const FamilyTreePage = () => {
                 </button>
               </div>
 
-              {/* Expand/Collapse */}
+
               <button
                 onClick={toggleAllNodes}
                 className="text-xs text-green-600 hover:text-green-700 flex items-center gap-1"
               >
-                {expandedNodes.size > 0 ? (
-                  <><FaCompress className="text-xs" /> सबै संकुचित</>
-                ) : (
+                {collapsedNodes.size > 0 ? (
                   <><FaExpand className="text-xs" /> सबै विस्तार</>
+                ) : (
+                  <><FaCompress className="text-xs" /> सबै संकुचित</>
                 )}
               </button>
             </div>
 
-            {/* Tree View */}
+
             <div
-              ref={containerRef}
-              className="min-h-[400px] max-h-[70vh] overflow-auto bg-white rounded-xl p-4 border border-gray-200"
+              className="min-h-[400px] max-h-[calc(70vh-5.5rem)] overflow-auto bg-white rounded-xl p-4 border border-gray-200"
             >
-              <div
-                ref={treeRef}
-                style={{
-                  transform: `scale(${zoomLevel})`,
-                  transformOrigin: 'top center',
-                  width: `${100 / zoomLevel}%`,
-                }}
-              >
-                {treeLoading ? (
-                  <div className="flex items-center justify-center h-64">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
-                  </div>
-                ) : treeData?.data && treeData.data.length > 0 ? (
-                  <div className="flex flex-wrap justify-center gap-8 p-4 min-h-[400px]">
-                    {treeData.data.map((root) => (
-                      <div key={root._id} className="flex flex-col items-center">
-                        {renderFamilyNode(root, new Set(), 0)}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FaTree className="text-4xl text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">कुनै वृक्ष डाटा उपलब्ध छैन</p>
-                    <p className="text-sm text-gray-400">वृक्ष निर्माण गर्न सदस्यहरू थप्नुहोस्</p>
-                  </div>
-                )}
-              </div>
+              {treeLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                </div>
+              ) : treeData?.data && treeData.data.length > 0 ? (
+                <div className="w-max min-w-full p-4" style={{ zoom: zoomLevel }}>
+                  {showPhotos ? (
+                    <TreeChart
+                      ref={treeRef}
+                      className="mx-auto"
+                      roots={treeData.data}
+                      cardWidth={CARD_WIDTH}
+                      collapsedIds={collapsedNodes}
+                      onToggle={toggleNode}
+                      renderCard={(member, { isSpouse }) => (
+                        <TreeMemberCard
+                          member={member}
+                          isSpouse={isSpouse}
+                          showPhotos={showPhotos}
+                          onClick={() => handleMemberClick(member)}
+                        />
+                      )}
+                    />
+                  ) : (
+                    <TreeChart
+                      ref={treeRef}
+                      className="mx-auto"
+                      variant="book"
+                      roots={treeData.data}
+                      {...BOOK}
+                      rowLabel={generationOfRow}
+                      collapsedIds={collapsedNodes}
+                      onToggle={toggleNode}
+                      renderCard={(member, { isSpouse }) => (
+                        <BookName
+                          member={member}
+                          isSpouse={isSpouse}
+                          onClick={() => handleMemberClick(member)}
+                        />
+                      )}
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <FaTree className="text-4xl text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">कुनै वृक्ष डाटा उपलब्ध छैन</p>
+                  <p className="text-sm text-gray-400">वृक्ष निर्माण गर्न सदस्यहरू थप्नुहोस्</p>
+                </div>
+              )}
             </div>
+
+            <MemberProfileModal memberId={profileMemberId} onClose={() => setProfileMemberId(null)} />
           </div>
         )}
       </Modal>
 
-      {/* Print Styles - hide all UI when printing */}
-      <style jsx global>{`
+
+      <style>{`
         @media print {
           .no-print,
           header, nav, .sidebar, .toolbar,

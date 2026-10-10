@@ -1,4 +1,4 @@
-// server.js
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -13,12 +13,9 @@ import { rateLimit } from './middlewares/rateLimit.js';
 // Import routes
 import memberRoutes from './routes/memberRoutes.js';
 import familyRoutes from './routes/familyRoutes.js';
-import donationRoutes from './routes/donationRoutes.js';
-import organizationRoutes from './routes/organizationRoutes.js';
-import documentRoutes from './routes/documentRoutes.js';
-import chatRoutes from './routes/chatRoutes.js';
+
 import notificationRoutes from './routes/notificationRoutes.js';
-import backupRoutes from './routes/backupRoutes.js';
+
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import reportRoutes from './routes/reportRoutes.js';
 import searchRoutes from './routes/searchRoutes.js';
@@ -83,10 +80,17 @@ if (process.env.NODE_ENV === 'production') {
   app.use(logger.dev);
 }
 
-// Rate limiting
+// Behind a hosting proxy every visitor would otherwise look like one address.
+// Set TRUST_PROXY=1 on such a host so each visitor is counted separately.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
+
+// Rate limiting: one page of this app makes several requests, and a day of data
+// entry makes thousands, so the limit only has to stop runaway loops and abuse.
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: Number(process.env.RATE_LIMIT_MAX) || 3000,
 }));
 
 app.use(express.json({ limit: '200mb' }));
@@ -95,12 +99,9 @@ app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 // Routes
 app.use('/api/members', memberRoutes);
 app.use('/api/families', familyRoutes);
-app.use('/api/donations', donationRoutes);
-app.use('/api/organization', organizationRoutes);
-app.use('/api/documents', documentRoutes);
-app.use('/api/chat', chatRoutes);
+
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/backup', backupRoutes);
+
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/search', searchRoutes);

@@ -1,6 +1,0 @@
-# VITE_API_URL=https://katuwalbanshanewsoftware.onrender.com/api
-# VITE_SOCKET_URL=https://katuwalbanshanewsoftware.onrender.com
-VITE_API_URL=http://localhost:5000/api
-VITE_SOCKET_URL=http://localhost:5000
-VITE_CLOUDINARY_UPLOAD_PRESET=family_photos
-VITE_DEFAULT_LANGUAGE=en
