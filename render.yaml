@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: katuwal-bansha-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: MONGODB_URI
+        value: mongodb+srv://sushant:sushant2555@cluster0.2yrhb9k.mongodb.net/kotwal_bansa
+      - key: JWT_SECRET
+        value: 8c2f4a9d7e5b1f3a6c8d9e2f7b4a1c5d9e8f6a3b2c7d1e5f9a4b8c6d2e7f1a3
+      - key: FRONTEND_URL
+        value: https://client-opal-three-23.vercel.app
+      - key: CLOUDINARY_CLOUD_NAME
+        value: a71jmeil
+      - key: CLOUDINARY_API_KEY
+        value: "138762167172115"
+      - key: CLOUDINARY_API_SECRET
+        value: X1o9c8NAe4IR5fZ8ALbZvwyog3k
